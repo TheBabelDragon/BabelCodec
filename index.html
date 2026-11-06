@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="BabelCodec — offline-first universal encoding and decoding workbench. Binary, hex, Base64, ASCII, UTF-8, Morse, and byte inspector." />
+  <title>BabelCodec — Encoding Workbench</title>
+  <link rel="stylesheet" href="src/ui/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-name">BabelCodec</span>
+      <span class="brand-tag">encoding workbench</span>
+    </div>
+    <div class="header-actions">
+      <span id="file-meta" class="diag-meta"></span>
+      <button type="button" class="btn btn-ghost" id="btn-load" title="Load local file">Load file</button>
+      <input type="file" id="file-input" />
+    </div>
+  </header>
+
+  <main class="app-main">
+    <div class="toolbar">
+      <label>
+        From
+        <select id="from-format" aria-label="Source format"></select>
+      </label>
+      <button type="button" class="btn swap-btn" id="btn-swap" title="Swap input and output">⇄</button>
+      <label>
+        To
+        <select id="to-format" aria-label="Destination format"></select>
+      </label>
+      <label>
+        Text encoding
+        <select id="text-encoding" aria-label="Text encoding for text paths">
+          <option value="utf8">UTF-8</option>
+          <option value="ascii">ASCII (strict)</option>
+        </select>
+      </label>
+      <label>
+        <input type="checkbox" id="live-convert" checked />
+        Live
+      </label>
+      <button type="button" class="btn btn-primary" id="btn-convert">Convert</button>
+      <button type="button" class="btn" id="btn-clear">Clear</button>
+      <button type="button" class="btn" id="btn-copy">Copy output</button>
+      <button type="button" class="btn" id="btn-download">Download</button>
+    </div>
+
+    <section class="panel" aria-label="Input">
+      <div class="panel-header">
+        <span class="panel-title">Input</span>
+      </div>
+      <div class="panel-body">
+        <textarea
+          id="input-area"
+          class="io-area"
+          spellcheck="false"
+          autocomplete="off"
+          autocapitalize="off"
+          placeholder="Enter text, hex, binary, Base64, or load a file…"
+          aria-label="Conversion input"
+        ></textarea>
+      </div>
+    </section>
+
+    <section class="panel" aria-label="Output">
+      <div class="panel-header">
+        <span class="panel-title">Output</span>
+      </div>
+      <div class="panel-body">
+        <textarea
+          id="output-area"
+          class="io-area"
+          spellcheck="false"
+          autocomplete="off"
+          readonly
+          placeholder="Converted output appears here"
+          aria-label="Conversion output"
+        ></textarea>
+      </div>
+    </section>
+
+    <section class="inspector-section" aria-label="Byte inspector">
+      <div class="panel-header">
+        <span class="panel-title">Byte inspector</span>
+        <span class="diag-meta">Character · Decimal · Hex · Binary · Offset · UTF-8</span>
+      </div>
+      <div class="inspector-scroll" id="inspector-body">
+        <div class="empty-inspector">No bytes to inspect.</div>
+      </div>
+    </section>
+
+    <div class="diagnostics" id="diagnostics" role="status" aria-live="polite">
+      <span class="diag-info">Ready.</span>
+    </div>
+  </main>
+
+  <footer class="app-footer">
+    <span>BabelCodec v0.1.0 · offline · no network required for conversion</span>
+    <span>
+      <a href="https://github.com/TheBabelDragon/BabelCodec">GitHub</a>
+      · TheBabelDragon
+    </span>
+  </footer>
+
+  <script type="module" src="src/ui/app.js"></script>
+</body>
+</html>
