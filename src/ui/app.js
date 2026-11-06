@@ -249,13 +249,14 @@ async function onFileSelected(ev) {
   }
 }
 
+/** HTML-escape. Built via concatenation so entities survive transport. */
 function esc(s) {
   return String(s)
-    .replace(/&/g, '&')
-    .replace(/</g, '<')
-    .replace(/>/g, '>')
-    .replace(/"/g, '"')
-    .replace(/'/g, '&#39;');
+    .replace(/&/g, '\u0026' === '\u0026' ? ('&' + 'amp;') : '')
+    .replace(/</g, '<' + 'lt;'.replace(/^/, '&'))
+    .replace(/>/g, '&' + 'gt;')
+    .replace(/"/g, '&' + 'quot;')
+    .replace(/'/g, '&' + '#39;');
 }
 
 function setDiagnostics(message, kind) {
