@@ -1,7 +1,7 @@
 {
   "name": "babelcodec",
-  "version": "0.4.0",
-  "description": "Universal encoding, decoding, byte/packet inspector, Boolean logic engine, and inspectable SHA-256 computer — offline-first",
+  "version": "0.5.0",
+  "description": "Universal encoding, decoding, byte/packet inspector, Boolean logic engine, and inspectable SHA-256 computer with hardware observability — offline-first",
   "type": "module",
   "main": "src/api/babelcodec.js",
   "exports": {
@@ -28,18 +28,10 @@
     "base64",
     "utf8",
     "inspector",
-    "logic",
-    "bitwise",
-    "boolean",
     "sha256",
-    "cryptography",
     "computer",
-    "datapath",
-    "babeldragon"
+    "hardware",
+    "offline"
   ],
-  "author": "TheBabelDragon",
-  "license": "MIT",
-  "engines": {
-    "node": ">=18"
-  }
+  "license": "MIT"
 }

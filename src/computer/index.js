@@ -27,3 +27,29 @@ export {
   getMachineTrace,
   resetMachine,
 } from './sha256-machine.js';
+
+// Inspection layer (architecture-neutral)
+export {
+  EXTENSION_POINTS,
+  defineComponent,
+  sha256ComponentCatalog,
+  freezeSnapshot,
+  serializeSnapshot,
+  deserializeSnapshot,
+  cloneSnapshot,
+  formatWordEntry,
+  ImplKind,
+  OPERATION_FIDELITY,
+  inspectAdd32,
+  inspectAdd32Many,
+  fullAdderTable,
+  wordToBin32,
+  wordToHex32,
+  makeTraceEvent,
+  TraceBuffer,
+  captureMachineBlob,
+  restoreMachineBlob,
+  ExecutionHistory,
+  snapshotSha256Machine,
+  inspectComponent,
+} from './inspection/index.js';

@@ -2,12 +2,12 @@
  * BabelCodec UI — conversion engine stays independent of DOM.
  * Security: all untrusted strings use textContent / esc(); no unsafe innerHTML.
  */
-import * as BC from '../api/babelcodec.js?v=0.4.0';
-import { createInspectorView } from './inspector-view.js?v=0.4.0';
-import { createStructureView } from './structure-view.js?v=0.4.0';
-import { createLogicView } from './logic-view.js?v=0.4.0';
-import { createSha256Lab } from './sha256-lab.js?v=0.4.0';
-import { createComputerLab } from './computer-lab.js?v=0.4.0';
+import * as BC from '../api/babelcodec.js?v=0.5.0';
+import { createInspectorView } from './inspector-view.js?v=0.5.0';
+import { createStructureView } from './structure-view.js?v=0.5.0';
+import { createLogicView } from './logic-view.js?v=0.5.0';
+import { createSha256Lab } from './sha256-lab.js?v=0.5.0';
+import { createComputerLab } from './computer-lab.js?v=0.5.0';
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 let currentBytes = null;
