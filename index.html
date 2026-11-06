@@ -5,18 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="BabelCodec — offline-first universal encoding, decoding, and byte/packet inspector workbench." />
   <title>BabelCodec — Byte &amp; Encoding Workbench</title>
-  <link rel="stylesheet" href="src/ui/styles.css?v=0.2.2" />
+  <link rel="stylesheet" href="src/ui/styles.css?v=0.3.0" />
 </head>
 <body>
   <header class="app-header">
     <div class="brand">
       <span class="brand-name">BabelCodec</span>
-      <span class="brand-tag">encoding · inspection workbench</span>
+      <span class="brand-tag">encoding · inspection · logic</span>
     </div>
     <nav class="tab-nav" role="tablist" aria-label="Workbench views">
       <button type="button" class="tab-btn active" data-tab="converter" role="tab" aria-selected="true">Converter</button>
       <button type="button" class="tab-btn" data-tab="inspector" role="tab" aria-selected="false">Hex Inspector</button>
       <button type="button" class="tab-btn" data-tab="structure" role="tab" aria-selected="false">Structure &amp; Layout</button>
+      <button type="button" class="tab-btn" data-tab="logic" role="tab" aria-selected="false">Logic Lab</button>
     </nav>
     <div class="header-actions">
       <span id="file-meta" class="diag-meta"></span>
@@ -99,19 +100,23 @@
       <div id="structure-root" class="structure-root"></div>
     </div>
 
+    <div id="view-logic" class="view-panel" hidden>
+      <div id="logic-root" class="logic-root"></div>
+    </div>
+
     <div class="diagnostics" id="diagnostics" role="status" aria-live="polite">
       <span class="diag-info">Ready.</span>
     </div>
   </main>
 
   <footer class="app-footer">
-    <span>BabelCodec v0.2.2 · offline · client-side only</span>
+    <span>BabelCodec v0.3.0 · offline · client-side only</span>
     <span>
       <a href="https://github.com/TheBabelDragon/BabelCodec">GitHub</a>
       · TheBabelDragon
     </span>
   </footer>
 
-  <script type="module" src="src/ui/app.js?v=0.2.2"></script>
+  <script type="module" src="src/ui/app.js?v=0.3.0"></script>
 </body>
 </html>

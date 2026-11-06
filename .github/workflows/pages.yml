@@ -2,7 +2,7 @@ name: Test and Deploy
 
 on:
   push:
-    branches: [main, feat/babelcodec-foundation, feat/babelcodec-inspector-workbench]
+    branches: [main, feat/babelcodec-foundation, feat/babelcodec-inspector-workbench, feat/babelcodec-logic-engine]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: '22'
       - name: Run tests
-        run: node --test tests/core.test.js tests/inspector.test.js
+        run: node --test tests/core.test.js tests/inspector.test.js tests/logic/*.test.js
       - name: Build verification
         run: node scripts/build.js
 

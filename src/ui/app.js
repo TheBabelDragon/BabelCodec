@@ -2,9 +2,10 @@
  * BabelCodec UI — conversion engine stays independent of DOM.
  * Security: all untrusted strings use textContent / esc(); no unsafe innerHTML.
  */
-import * as BC from '../api/babelcodec.js?v=0.2.1';
-import { createInspectorView } from './inspector-view.js?v=0.2.1';
-import { createStructureView } from './structure-view.js?v=0.2.1';
+import * as BC from '../api/babelcodec.js?v=0.3.0';
+import { createInspectorView } from './inspector-view.js?v=0.3.0';
+import { createStructureView } from './structure-view.js?v=0.3.0';
+import { createLogicView } from './logic-view.js?v=0.3.0';
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 let currentBytes = null;
@@ -12,6 +13,7 @@ const $ = (s) => document.querySelector(s);
 const els = {};
 let inspectorView = null;
 let structureView = null;
+let logicView = null;
 
 function init() {
   Object.assign(els, {
@@ -25,6 +27,7 @@ function init() {
     viewConverter: $('#view-converter'),
     viewInspector: $('#view-inspector'),
     viewStructure: $('#view-structure'),
+    viewLogic: $('#view-logic'),
   });
 
   const formats = [
@@ -121,12 +124,39 @@ function init() {
   inspectorView = createInspectorView($('#hex-inspector-root'), {
     onSelectionChange: (sel, slice) => {
       if (structureView) structureView.setSelection(sel, slice);
+      const transferBtn = document.getElementById('btn-to-logic');
+      if (transferBtn) transferBtn.disabled = !(slice && slice.length);
     },
     onDiagnostic: setDiagnostics,
   });
   structureView = createStructureView($('#structure-root'), {
     onDiagnostic: setDiagnostics,
   });
+  logicView = createLogicView($('#logic-root'), {
+    onDiagnostic: setDiagnostics,
+  });
+
+  const transferBtn = document.createElement('button');
+  transferBtn.type = 'button';
+  transferBtn.className = 'btn btn-ghost';
+  transferBtn.id = 'btn-to-logic';
+  transferBtn.textContent = '\u2192 Logic Lab';
+  transferBtn.title = 'Send current selection to Logic Lab operand A';
+  transferBtn.disabled = true;
+  transferBtn.addEventListener('click', () => {
+    if (!inspectorView) return;
+    const bytes = inspectorView.getBytes?.();
+    const sel = inspectorView.getSelection?.();
+    if (!bytes || !sel || !sel.length) {
+      setDiagnostics('Select bytes in the Hex Inspector first.', 'info');
+      return;
+    }
+    const slice = bytes.slice(sel.start, sel.end);
+    if (logicView) logicView.setOperandA(slice);
+    switchTab('logic');
+  });
+  const headerActions = document.querySelector('.header-actions');
+  if (headerActions) headerActions.insertBefore(transferBtn, headerActions.firstChild);
 
   setDiagnostics('Ready. Enter input or load a file.', 'info');
   switchTab('converter');
@@ -140,8 +170,10 @@ function switchTab(name) {
   els.viewConverter.hidden = name !== 'converter';
   els.viewInspector.hidden = name !== 'inspector';
   els.viewStructure.hidden = name !== 'structure';
+  if (els.viewLogic) els.viewLogic.hidden = name !== 'logic';
   if (name === 'inspector' && inspectorView) inspectorView.refresh();
   if (name === 'structure' && structureView) structureView.refresh();
+  if (name === 'logic' && logicView) logicView.refresh();
 }
 
 function pushBytesToViews(bytes) {
@@ -192,7 +224,7 @@ function runConvert() {
     if (out instanceof Uint8Array) {
       currentBytes = out;
       els.output.value = BC.encodeHex(out, { separator: ' ' });
-      setDiagnostics(`OK · ${out.length} byte(s) -> hex · ${from} -> ${to}`, 'ok');
+      setDiagnostics(`OK \u00b7 ${out.length} byte(s) -> hex \u00b7 ${from} -> ${to}`, 'ok');
       pushBytesToViews(out);
     } else {
       els.output.value = out;
@@ -200,22 +232,22 @@ function runConvert() {
         if (['hex', 'binary', 'base64', 'decimal', 'octal'].includes(to)) {
           currentBytes = BC.convert(out, to, 'bytes').output;
           pushBytesToViews(currentBytes);
-          setDiagnostics(`OK · ${currentBytes.length} byte(s) · ${from} -> ${to}`, 'ok');
+          setDiagnostics(`OK \u00b7 ${currentBytes.length} byte(s) \u00b7 ${from} -> ${to}`, 'ok');
         } else if (['text', 'ascii', 'utf8'].includes(from)) {
           currentBytes = BC.convert(input, 'text', 'bytes', {
             encoding: opts.encoding,
           }).output;
           pushBytesToViews(currentBytes);
-          setDiagnostics(`OK · ${currentBytes.length} byte(s) · ${from} -> ${to}`, 'ok');
+          setDiagnostics(`OK \u00b7 ${currentBytes.length} byte(s) \u00b7 ${from} -> ${to}`, 'ok');
         } else {
           currentBytes = null;
           pushBytesToViews(null);
-          setDiagnostics(`OK · ${from} -> ${to}`, 'ok');
+          setDiagnostics(`OK \u00b7 ${from} -> ${to}`, 'ok');
         }
       } catch {
         currentBytes = null;
         pushBytesToViews(null);
-        setDiagnostics(`OK · ${from} -> ${to}`, 'ok');
+        setDiagnostics(`OK \u00b7 ${from} -> ${to}`, 'ok');
       }
     }
   } catch (e) {
@@ -237,7 +269,7 @@ async function onFileSelected(ev) {
   }
   try {
     currentBytes = new Uint8Array(await file.arrayBuffer());
-    els.fileMeta.textContent = `${file.name} · ${file.size} bytes`;
+    els.fileMeta.textContent = `${file.name} \u00b7 ${file.size} bytes`;
     els.input.value = BC.encodeHex(currentBytes, { separator: ' ' });
     els.fromFormat.value = 'hex';
     els.toFormat.value = 'base64';
@@ -249,7 +281,6 @@ async function onFileSelected(ev) {
   }
 }
 
-/** HTML-escape. Entities built without literal ampersand-sequences in source. */
 function esc(s) {
   const amp = String.fromCharCode(38);
   const entity = (name) => amp + name + ';';

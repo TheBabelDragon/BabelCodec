@@ -59,3 +59,31 @@ export {
   formatOffset,
   sliceSelection,
 } from './hexgrid.js';
+
+// Logic engine (re-exported for convenience; prefer babelcodec/logic subpath)
+export {
+  and,
+  or,
+  xor,
+  not,
+  nand,
+  nor,
+  xnor,
+  applyMask,
+  testBit,
+  setBit,
+  clearBit,
+  toggleBit,
+  leftShift,
+  rightShift,
+  andBytes,
+  orBytes,
+  xorBytes,
+  notBytes,
+  applyMaskBytes,
+  diffBytes,
+  evaluateCircuit,
+  generateTruthTable,
+  GATES,
+  GATE_NAMES,
+} from '../logic/index.js';
