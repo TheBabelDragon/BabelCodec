@@ -35,3 +35,27 @@ export {
 } from './registry.js';
 
 export { inspectBytes, formatInspectionTable } from './inspector.js';
+
+export {
+  interpretBytes,
+  validateLayout,
+  decodeLayout,
+  TYPE_SIZES,
+} from './structure.js';
+
+export {
+  searchBytes,
+  patternToBytes,
+  findNext,
+  findPrevious,
+} from './search.js';
+
+export {
+  buildHexGrid,
+  offsetToCell,
+  parseOffset,
+  normalizeSelection,
+  selectionFromClick,
+  formatOffset,
+  sliceSelection,
+} from './hexgrid.js';
