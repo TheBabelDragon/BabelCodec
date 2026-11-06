@@ -4,7 +4,7 @@
 
 import * as core from '../core/index.js';
 
-export const version = '0.1.0';
+export const version = '0.2.0';
 
 export const {
   ConversionError,
@@ -38,6 +38,20 @@ export const {
   validate,
   inspectBytes,
   formatInspectionTable,
+  interpretBytes,
+  validateLayout,
+  decodeLayout,
+  TYPE_SIZES,
+  searchBytes,
+  patternToBytes,
+  findNext,
+  findPrevious,
+  buildHexGrid,
+  offsetToCell,
+  parseOffset,
+  selectionFromClick,
+  formatOffset,
+  sliceSelection,
 } = core;
 
 export function bytesToHex(bytes, opts) {
@@ -71,6 +85,17 @@ const api = {
   getCodec: core.getCodec,
   inspectBytes: core.inspectBytes,
   formatInspectionTable: core.formatInspectionTable,
+  interpretBytes: core.interpretBytes,
+  validateLayout: core.validateLayout,
+  decodeLayout: core.decodeLayout,
+  searchBytes: core.searchBytes,
+  patternToBytes: core.patternToBytes,
+  findNext: core.findNext,
+  findPrevious: core.findPrevious,
+  buildHexGrid: core.buildHexGrid,
+  parseOffset: core.parseOffset,
+  selectionFromClick: core.selectionFromClick,
+  sliceSelection: core.sliceSelection,
   encodeBinary: core.encodeBinary,
   decodeBinary: core.decodeBinary,
   encodeHex: core.encodeHex,
@@ -94,6 +119,8 @@ const api = {
   roundTrip,
   bytesEqual: core.bytesEqual,
   toUint8Array: core.toUint8Array,
+  cloneBytes: core.cloneBytes,
+  TYPE_SIZES: core.TYPE_SIZES,
   ConversionError: core.ConversionError,
   ValidationError: core.ValidationError,
   MalformedInputError: core.MalformedInputError,

@@ -1,7 +1,7 @@
 {
   "name": "babelcodec",
-  "version": "0.1.0",
-  "description": "Universal encoding & decoding workbench — offline-first byte and text transformation engine",
+  "version": "0.2.0",
+  "description": "Universal encoding, decoding, and byte/packet inspector workbench — offline-first",
   "type": "module",
   "main": "src/api/babelcodec.js",
   "exports": {
@@ -21,7 +21,7 @@
     "hex",
     "base64",
     "utf8",
-    "morse",
+    "inspector",
     "babeldragon"
   ],
   "author": "TheBabelDragon",
