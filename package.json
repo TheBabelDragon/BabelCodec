@@ -1,0 +1,32 @@
+{
+  "name": "babelcodec",
+  "version": "0.1.0",
+  "description": "Universal encoding & decoding workbench — offline-first byte and text transformation engine",
+  "type": "module",
+  "main": "src/api/babelcodec.js",
+  "exports": {
+    ".": "./src/api/babelcodec.js",
+    "./core": "./src/core/index.js"
+  },
+  "scripts": {
+    "test": "node --test tests/**/*.test.js",
+    "test:core": "node --test tests/core.test.js",
+    "build": "node scripts/build.js",
+    "validate": "node --test tests/**/*.test.js && node scripts/build.js"
+  },
+  "keywords": [
+    "encoding",
+    "decoding",
+    "binary",
+    "hex",
+    "base64",
+    "utf8",
+    "morse",
+    "babeldragon"
+  ],
+  "author": "TheBabelDragon",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}
