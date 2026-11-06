@@ -2,9 +2,10 @@
  * Documented public JavaScript API for BabelCodec.
  */
 
-import * as core from '../core/index.js?v=0.2.2';
+import * as core from '../core/index.js';
+import * as logic from '../logic/index.js';
 
-export const version = '0.2.2';
+export const version = '0.3.0';
 
 export const {
   ConversionError,
@@ -53,6 +54,41 @@ export const {
   formatOffset,
   sliceSelection,
 } = core;
+
+export const {
+  and,
+  or,
+  xor,
+  not,
+  nand,
+  nor,
+  xnor,
+  applyMask,
+  testBit,
+  setBit,
+  clearBit,
+  toggleBit,
+  leftShift,
+  rightShift,
+  andBytes,
+  orBytes,
+  xorBytes,
+  notBytes,
+  applyMaskBytes,
+  diffBytes,
+  evaluateCircuit,
+  generateTruthTable,
+  GATES,
+  GATE_NAMES,
+  toBinaryString,
+  asSigned,
+  toUnsigned,
+  widthMask,
+  validateCircuit,
+  serializeCircuit,
+  parseCircuit,
+  byteXorCircuit,
+} = logic;
 
 export function bytesToHex(bytes, opts) {
   return core.encodeHex(bytes, opts);
@@ -124,6 +160,37 @@ const api = {
   ConversionError: core.ConversionError,
   ValidationError: core.ValidationError,
   MalformedInputError: core.MalformedInputError,
+  and: logic.and,
+  or: logic.or,
+  xor: logic.xor,
+  not: logic.not,
+  nand: logic.nand,
+  nor: logic.nor,
+  xnor: logic.xnor,
+  applyMask: logic.applyMask,
+  testBit: logic.testBit,
+  setBit: logic.setBit,
+  clearBit: logic.clearBit,
+  toggleBit: logic.toggleBit,
+  leftShift: logic.leftShift,
+  rightShift: logic.rightShift,
+  andBytes: logic.andBytes,
+  orBytes: logic.orBytes,
+  xorBytes: logic.xorBytes,
+  notBytes: logic.notBytes,
+  applyMaskBytes: logic.applyMaskBytes,
+  diffBytes: logic.diffBytes,
+  evaluateCircuit: logic.evaluateCircuit,
+  generateTruthTable: logic.generateTruthTable,
+  GATES: logic.GATES,
+  GATE_NAMES: logic.GATE_NAMES,
+  toBinaryString: logic.toBinaryString,
+  asSigned: logic.asSigned,
+  toUnsigned: logic.toUnsigned,
+  widthMask: logic.widthMask,
+  validateCircuit: logic.validateCircuit,
+  serializeCircuit: logic.serializeCircuit,
+  parseCircuit: logic.parseCircuit,
 };
 
 if (typeof window !== 'undefined') {
