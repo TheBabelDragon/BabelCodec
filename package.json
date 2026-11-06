@@ -1,6 +1,6 @@
 {
   "name": "babelcodec",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "description": "Universal encoding, decoding, and byte/packet inspector workbench — offline-first",
   "type": "module",
   "main": "src/api/babelcodec.js",
