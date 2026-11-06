@@ -1,0 +1,317 @@
+/**
+ * Hex-grid inspector view — virtualized rendering for large buffers.
+ */
+
+import * as BC from '../api/babelcodec.js';
+
+const ROW_HEIGHT = 22;
+const MAX_DOM_ROWS = 64;
+
+export function createInspectorView(container, opts = {}) {
+  const state = {
+    bytes: null,
+    bytesPerRow: 16,
+    selection: null,
+    searchMatches: [],
+    searchIndex: -1,
+    scrollOffset: 0,
+  };
+
+  const onSelectionChange = opts.onSelectionChange || (() => {});
+  const onDiagnostic = opts.onDiagnostic || (() => {});
+
+  container.innerHTML = '';
+  container.classList.add('hex-inspector');
+
+  const toolbar = el('div', { className: 'hex-toolbar' });
+  const bprSelect = el('select', { 'aria-label': 'Bytes per row' });
+  for (const n of [8, 16, 32]) {
+    const o = el('option', { value: String(n), textContent: `${n} / row` });
+    if (n === 16) o.selected = true;
+    bprSelect.appendChild(o);
+  }
+  const jumpInput = el('input', {
+    type: 'text',
+    placeholder: 'Offset (dec or 0x…)',
+    'aria-label': 'Jump to offset',
+    className: 'hex-jump',
+  });
+  const jumpBtn = el('button', { type: 'button', className: 'btn', textContent: 'Go' });
+  const searchInput = el('input', {
+    type: 'text',
+    placeholder: 'Search hex / text',
+    'aria-label': 'Search pattern',
+    className: 'hex-search',
+  });
+  const searchMode = el('select', { 'aria-label': 'Search mode' });
+  for (const [v, l] of [['hex', 'Hex'], ['ascii', 'ASCII'], ['utf8', 'UTF-8']]) {
+    searchMode.appendChild(el('option', { value: v, textContent: l }));
+  }
+  const searchBtn = el('button', { type: 'button', className: 'btn', textContent: 'Find' });
+  const prevBtn = el('button', { type: 'button', className: 'btn', textContent: '◀' });
+  const nextBtn = el('button', { type: 'button', className: 'btn', textContent: '▶' });
+  const matchMeta = el('span', { className: 'diag-meta', textContent: '' });
+  const selMeta = el('span', { className: 'sel-meta', textContent: 'No selection' });
+
+  toolbar.append(
+    el('label', {}, [document.createTextNode('Width '), bprSelect]),
+    jumpInput, jumpBtn, searchInput, searchMode, searchBtn, prevBtn, nextBtn, matchMeta, selMeta,
+  );
+
+  const copyBar = el('div', { className: 'hex-copybar' });
+  for (const [fmt, label] of [['hex', 'Copy hex'], ['base64', 'Copy Base64'], ['binary', 'Copy binary'], ['download', 'Download']]) {
+    copyBar.appendChild(el('button', { type: 'button', className: 'btn btn-ghost', textContent: label, dataset: { fmt } }));
+  }
+
+  const scroll = el('div', { className: 'hex-scroll', tabIndex: 0, role: 'grid', 'aria-label': 'Hex inspector grid' });
+  const spacer = el('div', { className: 'hex-spacer' });
+  const viewport = el('div', { className: 'hex-viewport' });
+  scroll.append(spacer, viewport);
+  container.append(toolbar, copyBar, scroll);
+
+  function setBytes(bytes) {
+    state.bytes = bytes && bytes.length ? new Uint8Array(bytes) : null;
+    state.selection = null;
+    state.searchMatches = [];
+    state.searchIndex = -1;
+    state.scrollOffset = 0;
+    render();
+    updateSelMeta();
+    matchMeta.textContent = '';
+  }
+
+  function totalRows() {
+    if (!state.bytes) return 0;
+    return Math.ceil(state.bytes.length / state.bytesPerRow) || 1;
+  }
+
+  function render() {
+    if (!state.bytes || state.bytes.length === 0) {
+      spacer.style.height = '0px';
+      viewport.textContent = '';
+      viewport.appendChild(el('div', { className: 'empty-inspector', textContent: 'No bytes to inspect. Convert or load a file.' }));
+      return;
+    }
+
+    const rows = totalRows();
+    spacer.style.height = `${rows * ROW_HEIGHT}px`;
+    const viewH = scroll.clientHeight || 240;
+    const visible = Math.ceil(viewH / ROW_HEIGHT) + 4;
+    const first = Math.max(0, Math.floor(scroll.scrollTop / ROW_HEIGHT) - 2);
+    const last = Math.min(rows, first + Math.max(visible, MAX_DOM_ROWS));
+    state.scrollOffset = first;
+
+    const startByte = first * state.bytesPerRow;
+    const endByte = Math.min(state.bytes.length, last * state.bytesPerRow);
+    const grid = BC.buildHexGrid(state.bytes, {
+      bytesPerRow: state.bytesPerRow,
+      startOffset: startByte,
+      endOffset: endByte,
+    });
+
+    viewport.textContent = '';
+    viewport.style.transform = `translateY(${first * ROW_HEIGHT}px)`;
+
+    const table = el('div', { className: 'hex-grid' });
+    for (const row of grid.rows) {
+      const rowEl = el('div', { className: 'hex-row', role: 'row', dataset: { offset: String(row.offset) } });
+      rowEl.style.height = `${ROW_HEIGHT}px`;
+      rowEl.appendChild(el('span', { className: 'hex-offset', textContent: row.offsetHex }));
+
+      const hexGroup = el('span', { className: 'hex-bytes' });
+      for (let c = 0; c < state.bytesPerRow; c++) {
+        const abs = row.offset + c;
+        const cell = el('span', { className: 'hex-byte', role: 'gridcell', dataset: { offset: String(abs) } });
+        if (c < row.hexCells.length && row.hexCells[c]) {
+          cell.textContent = row.hexCells[c];
+          if (state.selection && abs >= state.selection.start && abs < state.selection.end) cell.classList.add('selected');
+          if (state.searchMatches.includes(abs)) cell.classList.add('match');
+        } else {
+          cell.textContent = '  ';
+          cell.classList.add('empty');
+        }
+        if (c > 0 && c % 8 === 0) cell.classList.add('group-break');
+        hexGroup.appendChild(cell);
+      }
+      rowEl.appendChild(hexGroup);
+
+      const ascii = el('span', { className: 'hex-ascii', textContent: row.ascii });
+      if (state.selection) {
+        const rowEnd = row.offset + state.bytesPerRow;
+        if (state.selection.start < rowEnd && state.selection.end > row.offset) ascii.classList.add('selected-row');
+      }
+      rowEl.appendChild(ascii);
+      table.appendChild(rowEl);
+    }
+    viewport.appendChild(table);
+  }
+
+  function updateSelMeta() {
+    if (!state.selection || !state.bytes) {
+      selMeta.textContent = 'No selection';
+      onSelectionChange(null, null);
+      return;
+    }
+    const { start, end, length } = state.selection;
+    const slice = BC.sliceSelection(state.bytes, state.selection);
+    const hex = BC.encodeHex(slice, { separator: ' ' });
+    selMeta.textContent = `Sel ${start}–${end - 1} (${length} byte${length === 1 ? '' : 's'}) · ${hex.slice(0, 48)}${hex.length > 48 ? '…' : ''}`;
+    onSelectionChange(state.selection, slice);
+  }
+
+  function selectByte(offset, extend) {
+    if (!state.bytes || offset < 0 || offset >= state.bytes.length) return;
+    const anchor = state.selection?.anchor ?? state.selection?.start ?? null;
+    state.selection = BC.selectionFromClick(offset, anchor, state.bytes.length, extend);
+    render();
+    updateSelMeta();
+  }
+
+  bprSelect.addEventListener('change', () => {
+    state.bytesPerRow = Number(bprSelect.value) || 16;
+    render();
+  });
+
+  jumpBtn.addEventListener('click', () => {
+    if (!state.bytes) return;
+    try {
+      const off = BC.parseOffset(jumpInput.value, state.bytes.length);
+      selectByte(off, false);
+      scroll.scrollTop = Math.floor(off / state.bytesPerRow) * ROW_HEIGHT;
+      onDiagnostic(`Jumped to offset ${off} (0x${off.toString(16).toUpperCase()})`, 'ok');
+    } catch (e) {
+      onDiagnostic(e.message, 'err');
+    }
+  });
+  jumpInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') jumpBtn.click(); });
+
+  function runSearch() {
+    if (!state.bytes) return;
+    const pattern = searchInput.value;
+    if (!pattern.trim()) {
+      onDiagnostic('Empty search pattern rejected.', 'err');
+      return;
+    }
+    try {
+      const result = BC.searchBytes(state.bytes, pattern, { mode: searchMode.value, maxResults: 5000 });
+      state.searchMatches = result.matches.slice();
+      state.searchIndex = result.count > 0 ? 0 : -1;
+      matchMeta.textContent =
+        result.count === 0 ? 'No matches' : `${result.count} match${result.count === 1 ? '' : 'es'}${result.truncated ? ' (truncated)' : ''}`;
+      if (state.searchIndex >= 0) {
+        const off = result.matches[0];
+        selectByte(off, false);
+        scroll.scrollTop = Math.floor(off / state.bytesPerRow) * ROW_HEIGHT;
+      }
+      render();
+      onDiagnostic(result.count ? `Found ${result.count} match(es)` : 'No matches', result.count ? 'ok' : 'info');
+    } catch (e) {
+      onDiagnostic(e.message, 'err');
+    }
+  }
+
+  searchBtn.addEventListener('click', runSearch);
+  searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(); });
+
+  nextBtn.addEventListener('click', () => {
+    if (!state.searchMatches.length) return;
+    state.searchIndex = (state.searchIndex + 1) % state.searchMatches.length;
+    const off = state.searchMatches[state.searchIndex];
+    selectByte(off, false);
+    scroll.scrollTop = Math.floor(off / state.bytesPerRow) * ROW_HEIGHT;
+    matchMeta.textContent = `Match ${state.searchIndex + 1}/${state.searchMatches.length}`;
+  });
+  prevBtn.addEventListener('click', () => {
+    if (!state.searchMatches.length) return;
+    state.searchIndex = (state.searchIndex - 1 + state.searchMatches.length) % state.searchMatches.length;
+    const off = state.searchMatches[state.searchIndex];
+    selectByte(off, false);
+    scroll.scrollTop = Math.floor(off / state.bytesPerRow) * ROW_HEIGHT;
+    matchMeta.textContent = `Match ${state.searchIndex + 1}/${state.searchMatches.length}`;
+  });
+
+  scroll.addEventListener('scroll', () => { window.requestAnimationFrame(render); });
+
+  viewport.addEventListener('click', (e) => {
+    const cell = e.target.closest('.hex-byte');
+    if (!cell || cell.classList.contains('empty')) return;
+    selectByte(Number(cell.dataset.offset), e.shiftKey);
+  });
+
+  scroll.addEventListener('keydown', (e) => {
+    if (!state.bytes || !state.selection) return;
+    let next = state.selection.anchor ?? state.selection.start;
+    if (e.key === 'ArrowRight') next += 1;
+    else if (e.key === 'ArrowLeft') next -= 1;
+    else if (e.key === 'ArrowDown') next += state.bytesPerRow;
+    else if (e.key === 'ArrowUp') next -= state.bytesPerRow;
+    else return;
+    e.preventDefault();
+    next = Math.max(0, Math.min(state.bytes.length - 1, next));
+    selectByte(next, e.shiftKey);
+    const row = Math.floor(next / state.bytesPerRow);
+    const top = row * ROW_HEIGHT;
+    if (top < scroll.scrollTop) scroll.scrollTop = top;
+    if (top >= scroll.scrollTop + scroll.clientHeight - ROW_HEIGHT) {
+      scroll.scrollTop = top - scroll.clientHeight + ROW_HEIGHT * 2;
+    }
+  });
+
+  copyBar.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-fmt]');
+    if (!btn || !state.bytes) return;
+    const fmt = btn.dataset.fmt;
+    const slice =
+      state.selection && state.selection.length
+        ? BC.sliceSelection(state.bytes, state.selection)
+        : new Uint8Array(state.bytes);
+    if (slice.length === 0) {
+      onDiagnostic('Nothing to copy.', 'info');
+      return;
+    }
+    try {
+      if (fmt === 'download') {
+        const blob = new Blob([slice], { type: 'application/octet-stream' });
+        const a = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        a.href = url;
+        a.download = 'babelcodec-selection.bin';
+        a.click();
+        URL.revokeObjectURL(url);
+        onDiagnostic(`Downloaded ${slice.length} byte(s).`, 'ok');
+        return;
+      }
+      let text;
+      if (fmt === 'hex') text = BC.encodeHex(slice, { separator: ' ' });
+      else if (fmt === 'base64') text = BC.encodeBase64(slice);
+      else if (fmt === 'binary') text = BC.encodeBinary(slice);
+      else return;
+      navigator.clipboard.writeText(text).then(
+        () => onDiagnostic(`Copied ${fmt} (${slice.length} byte(s)).`, 'ok'),
+        () => onDiagnostic('Clipboard write failed.', 'err'),
+      );
+    } catch (err) {
+      onDiagnostic(err.message, 'err');
+    }
+  });
+
+  render();
+  return { setBytes, getSelection: () => state.selection, getBytes: () => state.bytes, refresh: render };
+}
+
+function el(tag, attrs = {}, children = []) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'className') node.className = v;
+    else if (k === 'textContent') node.textContent = v;
+    else if (k === 'dataset') {
+      for (const [dk, dv] of Object.entries(v)) node.dataset[dk] = dv;
+    } else if (k.startsWith('aria-') || k === 'role' || k === 'tabIndex') {
+      node.setAttribute(k === 'tabIndex' ? 'tabindex' : k, v);
+    } else {
+      node.setAttribute(k, v);
+    }
+  }
+  for (const c of children) node.appendChild(c);
+  return node;
+}

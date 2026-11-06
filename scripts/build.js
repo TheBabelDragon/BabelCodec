@@ -14,6 +14,8 @@ const required = [
   'index.html',
   'src/ui/styles.css',
   'src/ui/app.js',
+  'src/ui/inspector-view.js',
+  'src/ui/structure-view.js',
   'src/api/babelcodec.js',
   'src/core/index.js',
   'src/core/registry.js',
@@ -26,6 +28,9 @@ const required = [
   'src/core/octal.js',
   'src/core/morse.js',
   'src/core/inspector.js',
+  'src/core/structure.js',
+  'src/core/search.js',
+  'src/core/hexgrid.js',
   'src/core/errors.js',
   'src/core/utils.js',
   'README.md',
@@ -51,6 +56,12 @@ try {
   if (codecs.length < 8) {
     console.error('  FAIL  expected at least 8 codecs');
     failed = true;
+  }
+  if (typeof mod.interpretBytes !== 'function' || typeof mod.searchBytes !== 'function') {
+    console.error('  FAIL  inspector APIs missing');
+    failed = true;
+  } else {
+    console.log('  OK  interpretBytes + searchBytes present');
   }
 } catch (e) {
   console.error('  FAIL  core import:', e.message);
