@@ -4,20 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="BabelCodec — offline-first universal encoding, decoding, and byte/packet inspector workbench." />
-  <title>BabelCodec — Byte &amp; Encoding Workbench</title>
-  <link rel="stylesheet" href="src/ui/styles.css?v=0.3.0" />
+  <title>BabelCodec — Byte & Encoding Workbench</title>
+  <link rel="stylesheet" href="src/ui/styles.css?v=0.4.0" />
 </head>
 <body>
   <header class="app-header">
     <div class="brand">
       <span class="brand-name">BabelCodec</span>
-      <span class="brand-tag">encoding · inspection · logic</span>
+      <span class="brand-tag">encoding · inspection · logic · SHA-256 · computer</span>
     </div>
     <nav class="tab-nav" role="tablist" aria-label="Workbench views">
       <button type="button" class="tab-btn active" data-tab="converter" role="tab" aria-selected="true">Converter</button>
       <button type="button" class="tab-btn" data-tab="inspector" role="tab" aria-selected="false">Hex Inspector</button>
-      <button type="button" class="tab-btn" data-tab="structure" role="tab" aria-selected="false">Structure &amp; Layout</button>
+      <button type="button" class="tab-btn" data-tab="structure" role="tab" aria-selected="false">Structure & Layout</button>
       <button type="button" class="tab-btn" data-tab="logic" role="tab" aria-selected="false">Logic Lab</button>
+      <button type="button" class="tab-btn" data-tab="sha256" role="tab" aria-selected="false">SHA-256 Lab</button>
+      <button type="button" class="tab-btn" data-tab="computer" role="tab" aria-selected="false">Computer Lab</button>
     </nav>
     <div class="header-actions">
       <span id="file-meta" class="diag-meta"></span>
@@ -61,15 +63,7 @@
             <span class="panel-title">Input</span>
           </div>
           <div class="panel-body">
-            <textarea
-              id="input-area"
-              class="io-area"
-              spellcheck="false"
-              autocomplete="off"
-              autocapitalize="off"
-              placeholder="Enter text, hex, binary, Base64, or load a file…"
-              aria-label="Conversion input"
-            ></textarea>
+            <textarea id="input-area" class="io-area" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Enter text, hex, binary, Base64, or load a file…" aria-label="Conversion input"></textarea>
           </div>
         </section>
 
@@ -78,15 +72,7 @@
             <span class="panel-title">Output</span>
           </div>
           <div class="panel-body">
-            <textarea
-              id="output-area"
-              class="io-area"
-              spellcheck="false"
-              autocomplete="off"
-              readonly
-              placeholder="Converted output appears here"
-              aria-label="Conversion output"
-            ></textarea>
+            <textarea id="output-area" class="io-area" spellcheck="false" autocomplete="off" readonly placeholder="Converted output appears here" aria-label="Conversion output"></textarea>
           </div>
         </section>
       </div>
@@ -104,19 +90,27 @@
       <div id="logic-root" class="logic-root"></div>
     </div>
 
+    <div id="view-sha256" class="view-panel" hidden>
+      <div id="sha256-root" class="sha256-root"></div>
+    </div>
+
+    <div id="view-computer" class="view-panel" hidden>
+      <div id="computer-root" class="computer-root"></div>
+    </div>
+
     <div class="diagnostics" id="diagnostics" role="status" aria-live="polite">
       <span class="diag-info">Ready.</span>
     </div>
   </main>
 
   <footer class="app-footer">
-    <span>BabelCodec v0.3.0 · offline · client-side only</span>
+    <span>BabelCodec v0.4.0 · offline · client-side only</span>
     <span>
       <a href="https://github.com/TheBabelDragon/BabelCodec">GitHub</a>
       · TheBabelDragon
     </span>
   </footer>
 
-  <script type="module" src="src/ui/app.js?v=0.3.0"></script>
+  <script type="module" src="src/ui/app.js?v=0.4.0"></script>
 </body>
 </html>
