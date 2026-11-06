@@ -1,20 +1,24 @@
 {
   "name": "babelcodec",
-  "version": "0.3.0",
-  "description": "Universal encoding, decoding, byte/packet inspector, and Boolean logic engine — offline-first",
+  "version": "0.4.0",
+  "description": "Universal encoding, decoding, byte/packet inspector, Boolean logic engine, and inspectable SHA-256 computer — offline-first",
   "type": "module",
   "main": "src/api/babelcodec.js",
   "exports": {
     ".": "./src/api/babelcodec.js",
     "./core": "./src/core/index.js",
-    "./logic": "./src/logic/index.js"
+    "./logic": "./src/logic/index.js",
+    "./sha256": "./src/sha256/index.js",
+    "./computer": "./src/computer/index.js"
   },
   "scripts": {
-    "test": "node --test tests/**/*.test.js tests/logic/**/*.test.js",
+    "test": "node --test tests/**/*.test.js tests/logic/**/*.test.js tests/sha256/**/*.test.js tests/computer/**/*.test.js",
     "test:core": "node --test tests/core.test.js",
     "test:logic": "node --test tests/logic/**/*.test.js",
+    "test:sha256": "node --test tests/sha256/**/*.test.js",
+    "test:computer": "node --test tests/computer/**/*.test.js",
     "build": "node scripts/build.js",
-    "validate": "node --test tests/**/*.test.js tests/logic/**/*.test.js && node scripts/build.js"
+    "validate": "node --test tests/**/*.test.js tests/logic/**/*.test.js tests/sha256/**/*.test.js tests/computer/**/*.test.js && node scripts/build.js"
   },
   "keywords": [
     "encoding",
@@ -27,6 +31,10 @@
     "logic",
     "bitwise",
     "boolean",
+    "sha256",
+    "cryptography",
+    "computer",
+    "datapath",
     "babeldragon"
   ],
   "author": "TheBabelDragon",
