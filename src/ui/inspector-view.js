@@ -2,7 +2,23 @@
  * Hex-grid inspector view — virtualized rendering for large buffers.
  */
 
-import * as BC from '../api/babelcodec.js';
+import * as HexGrid from '../core/hexgrid.js?v=0.2.1';
+import * as Search from '../core/search.js?v=0.2.1';
+import { encodeHex } from '../core/hex.js';
+import { encodeBase64 } from '../core/base64.js';
+import { encodeBinary } from '../core/binary.js';
+
+/** Bound to core modules so a stale babelcodec.js cache cannot break the inspector. */
+const BC = {
+  buildHexGrid: HexGrid.buildHexGrid,
+  parseOffset: HexGrid.parseOffset,
+  selectionFromClick: HexGrid.selectionFromClick,
+  sliceSelection: HexGrid.sliceSelection,
+  searchBytes: Search.searchBytes,
+  encodeHex,
+  encodeBase64,
+  encodeBinary,
+};
 
 const ROW_HEIGHT = 22;
 const MAX_DOM_ROWS = 64;
