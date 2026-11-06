@@ -3,7 +3,13 @@
  * DOM construction only — no innerHTML with user data.
  */
 
-import * as BC from '../api/babelcodec.js';
+import * as Structure from '../core/structure.js?v=0.2.1';
+
+const BC = {
+  interpretBytes: Structure.interpretBytes,
+  decodeLayout: Structure.decodeLayout,
+  validateLayout: Structure.validateLayout,
+};
 
 export function createStructureView(container, opts = {}) {
   const onDiagnostic = opts.onDiagnostic || (() => {});
