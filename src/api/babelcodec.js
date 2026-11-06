@@ -1,14 +1,14 @@
 /**
  * Documented public JavaScript API for BabelCodec.
- * Version 0.4.0 — encoding, inspection, logic, SHA-256, gate-level computer.
+ * Version 0.5.0 — encoding, inspection, logic, SHA-256, hardware observability.
  */
 
-import * as core from '../core/index.js?v=0.4.0';
-import * as logic from '../logic/index.js?v=0.4.0';
-import * as sha256mod from '../sha256/index.js?v=0.4.0';
-import * as computer from '../computer/index.js?v=0.4.0';
+import * as core from '../core/index.js?v=0.5.0';
+import * as logic from '../logic/index.js?v=0.5.0';
+import * as sha256mod from '../sha256/index.js?v=0.5.0';
+import * as computer from '../computer/index.js?v=0.5.0';
 
-export const version = '0.4.0';
+export const version = '0.5.0';
 
 export const {
   ConversionError, ValidationError, MalformedInputError,
@@ -55,6 +55,12 @@ export const {
   Sha256Machine, createSha256Machine, loadMessage, clock, stepRound,
   runUntilComplete, getMachineState, getRegisterSnapshot, getSignalSnapshot,
   getMachineTrace, resetMachine,
+  EXTENSION_POINTS, defineComponent, sha256ComponentCatalog,
+  freezeSnapshot, serializeSnapshot, deserializeSnapshot, cloneSnapshot,
+  formatWordEntry, ImplKind, OPERATION_FIDELITY, inspectAdd32, inspectAdd32Many,
+  fullAdderTable, wordToBin32, wordToHex32, makeTraceEvent, TraceBuffer,
+  captureMachineBlob, restoreMachineBlob, ExecutionHistory,
+  snapshotSha256Machine, inspectComponent,
 } = computer;
 
 export function bytesToHex(bytes, opts) { return core.encodeHex(bytes, opts); }
@@ -117,6 +123,11 @@ const api = {
   getMachineState: computer.getMachineState, getRegisterSnapshot: computer.getRegisterSnapshot,
   getSignalSnapshot: computer.getSignalSnapshot, getMachineTrace: computer.getMachineTrace,
   resetMachine: computer.resetMachine,
+  snapshotSha256Machine: computer.snapshotSha256Machine,
+  inspectComponent: computer.inspectComponent,
+  inspectAdd32: computer.inspectAdd32,
+  ExecutionHistory: computer.ExecutionHistory,
+  OPERATION_FIDELITY: computer.OPERATION_FIDELITY,
 };
 
 if (typeof window !== 'undefined') {
