@@ -192,7 +192,7 @@ function runConvert() {
     if (out instanceof Uint8Array) {
       currentBytes = out;
       els.output.value = BC.encodeHex(out, { separator: ' ' });
-      setDiagnostics(`OK · ${out.length} byte(s) → hex · ${from} → ${to}`, 'ok');
+      setDiagnostics(`OK · ${out.length} byte(s) -> hex · ${from} -> ${to}`, 'ok');
       pushBytesToViews(out);
     } else {
       els.output.value = out;
@@ -200,22 +200,22 @@ function runConvert() {
         if (['hex', 'binary', 'base64', 'decimal', 'octal'].includes(to)) {
           currentBytes = BC.convert(out, to, 'bytes').output;
           pushBytesToViews(currentBytes);
-          setDiagnostics(`OK · ${currentBytes.length} byte(s) · ${from} → ${to}`, 'ok');
+          setDiagnostics(`OK · ${currentBytes.length} byte(s) · ${from} -> ${to}`, 'ok');
         } else if (['text', 'ascii', 'utf8'].includes(from)) {
           currentBytes = BC.convert(input, 'text', 'bytes', {
             encoding: opts.encoding,
           }).output;
           pushBytesToViews(currentBytes);
-          setDiagnostics(`OK · ${currentBytes.length} byte(s) · ${from} → ${to}`, 'ok');
+          setDiagnostics(`OK · ${currentBytes.length} byte(s) · ${from} -> ${to}`, 'ok');
         } else {
           currentBytes = null;
           pushBytesToViews(null);
-          setDiagnostics(`OK · ${from} → ${to}`, 'ok');
+          setDiagnostics(`OK · ${from} -> ${to}`, 'ok');
         }
       } catch {
         currentBytes = null;
         pushBytesToViews(null);
-        setDiagnostics(`OK · ${from} → ${to}`, 'ok');
+        setDiagnostics(`OK · ${from} -> ${to}`, 'ok');
       }
     }
   } catch (e) {
@@ -249,14 +249,16 @@ async function onFileSelected(ev) {
   }
 }
 
-/** HTML-escape. Built via concatenation so entities survive transport. */
+/** HTML-escape. Entities built without literal ampersand-sequences in source. */
 function esc(s) {
+  const amp = String.fromCharCode(38); // &
+  const entity = (name) => amp + name + ';';
   return String(s)
-    .replace(/&/g, '\u0026' === '\u0026' ? ('&' + 'amp;') : '')
-    .replace(/</g, '<' + 'lt;'.replace(/^/, '&'))
-    .replace(/>/g, '&' + 'gt;')
-    .replace(/"/g, '&' + 'quot;')
-    .replace(/'/g, '&' + '#39;');
+    .replace(/&/g, entity('amp'))
+    .replace(/</g, entity('lt'))
+    .replace(/>/g, entity('gt'))
+    .replace(/"/g, entity('quot'))
+    .replace(/'/g, entity('#39'));
 }
 
 function setDiagnostics(message, kind) {
