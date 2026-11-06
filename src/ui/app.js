@@ -2,10 +2,12 @@
  * BabelCodec UI — conversion engine stays independent of DOM.
  * Security: all untrusted strings use textContent / esc(); no unsafe innerHTML.
  */
-import * as BC from '../api/babelcodec.js?v=0.3.0';
-import { createInspectorView } from './inspector-view.js?v=0.3.0';
-import { createStructureView } from './structure-view.js?v=0.3.0';
-import { createLogicView } from './logic-view.js?v=0.3.0';
+import * as BC from '../api/babelcodec.js?v=0.4.0';
+import { createInspectorView } from './inspector-view.js?v=0.4.0';
+import { createStructureView } from './structure-view.js?v=0.4.0';
+import { createLogicView } from './logic-view.js?v=0.4.0';
+import { createSha256Lab } from './sha256-lab.js?v=0.4.0';
+import { createComputerLab } from './computer-lab.js?v=0.4.0';
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 let currentBytes = null;
@@ -14,6 +16,8 @@ const els = {};
 let inspectorView = null;
 let structureView = null;
 let logicView = null;
+let sha256View = null;
+let computerView = null;
 
 function init() {
   Object.assign(els, {
@@ -28,6 +32,8 @@ function init() {
     viewInspector: $('#view-inspector'),
     viewStructure: $('#view-structure'),
     viewLogic: $('#view-logic'),
+    viewSha256: $('#view-sha256'),
+    viewComputer: $('#view-computer'),
   });
 
   const formats = [
@@ -135,6 +141,18 @@ function init() {
   logicView = createLogicView($('#logic-root'), {
     onDiagnostic: setDiagnostics,
   });
+  sha256View = createSha256Lab($('#sha256-root'), {
+    onDiagnostic: setDiagnostics,
+    onSendToComputer: (bytes) => {
+      if (computerView) {
+        computerView.loadBytes(bytes);
+        switchTab('computer');
+      }
+    },
+  });
+  computerView = createComputerLab($('#computer-root'), {
+    onDiagnostic: setDiagnostics,
+  });
 
   const transferBtn = document.createElement('button');
   transferBtn.type = 'button';
@@ -155,8 +173,29 @@ function init() {
     if (logicView) logicView.setOperandA(slice);
     switchTab('logic');
   });
+  const transferSha = document.createElement('button');
+  transferSha.type = 'button';
+  transferSha.className = 'btn btn-ghost';
+  transferSha.id = 'btn-to-sha256';
+  transferSha.textContent = '\u2192 SHA-256';
+  transferSha.title = 'Send current selection to SHA-256 Lab';
+  transferSha.addEventListener('click', () => {
+    if (!inspectorView) return;
+    const bytes = inspectorView.getBytes?.();
+    const sel = inspectorView.getSelection?.();
+    if (!bytes || !sel || !sel.length) {
+      setDiagnostics('Select bytes in the Hex Inspector first.', 'info');
+      return;
+    }
+    const slice = bytes.slice(sel.start, sel.end);
+    if (sha256View) sha256View.setBytes(slice);
+    switchTab('sha256');
+  });
   const headerActions = document.querySelector('.header-actions');
-  if (headerActions) headerActions.insertBefore(transferBtn, headerActions.firstChild);
+  if (headerActions) {
+    headerActions.insertBefore(transferSha, headerActions.firstChild);
+    headerActions.insertBefore(transferBtn, headerActions.firstChild);
+  }
 
   setDiagnostics('Ready. Enter input or load a file.', 'info');
   switchTab('converter');
@@ -171,7 +210,10 @@ function switchTab(name) {
   els.viewInspector.hidden = name !== 'inspector';
   els.viewStructure.hidden = name !== 'structure';
   if (els.viewLogic) els.viewLogic.hidden = name !== 'logic';
+  if (els.viewSha256) els.viewSha256.hidden = name !== 'sha256';
+  if (els.viewComputer) els.viewComputer.hidden = name !== 'computer';
   if (name === 'inspector' && inspectorView) inspectorView.refresh();
+  if (name === 'computer' && computerView) computerView.refresh();
   if (name === 'structure' && structureView) structureView.refresh();
   if (name === 'logic' && logicView) logicView.refresh();
 }
