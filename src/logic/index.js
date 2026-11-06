@@ -1,3 +1,7 @@
+/**
+ * BabelCodec logic engine — public surface.
+ */
+
 export {
   GATES, GATE_NAMES, evalGate, generateTruthTable,
   AND, OR, XOR, NOT, NAND, NOR, XNOR,
