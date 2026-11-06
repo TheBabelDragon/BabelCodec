@@ -4,7 +4,7 @@
 
 import * as core from '../core/index.js';
 
-export const version = '0.2.0';
+export const version = '0.2.1';
 
 export const {
   ConversionError,
