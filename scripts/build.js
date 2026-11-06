@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const EXPECTED_VERSION = '0.4.0';
+const EXPECTED_VERSION = '0.5.0';
 
 const required = [
   'index.html',
@@ -20,6 +20,14 @@ const required = [
   'src/ui/logic-view.js',
   'src/ui/sha256-lab.js',
   'src/ui/computer-lab.js',
+  'src/ui/hardware-view.js',
+  'src/computer/inspection/index.js',
+  'src/computer/inspection/snapshot.js',
+  'src/computer/inspection/signals.js',
+  'src/computer/inspection/trace.js',
+  'src/computer/inspection/history.js',
+  'src/computer/inspection/metadata.js',
+  'src/computer/inspection/adapter-sha256.js',
   'src/api/babelcodec.js',
   'src/core/index.js',
   'src/core/registry.js',
@@ -67,6 +75,7 @@ const required = [
   'README.md',
   'docs/LOGIC_ENGINE.md',
   'docs/ECOSYSTEM_INTEGRATION.md',
+  'docs/HARDWARE_INSPECTION.md',
 ];
 
 let failed = false;
@@ -135,6 +144,12 @@ try {
   } else {
     console.log('  OK  gate-level SHA-256 computer (abc vector)');
   }
+  if (typeof comp.snapshotSha256Machine !== 'function' || typeof comp.inspectAdd32 !== 'function') {
+    console.error('  FAIL  inspection surface missing');
+    failed = true;
+  } else {
+    console.log('  OK  inspection surface');
+  }
 } catch (e) {
   console.error('  FAIL  computer import:', e.message);
   failed = true;
@@ -164,4 +179,4 @@ if (failed) {
   process.exit(1);
 }
 
-console.log('\nBuild verification passed (static assets, core, logic, sha256, computer).');
+console.log('\nBuild verification passed (static assets, core, logic, sha256, computer, inspection).');
