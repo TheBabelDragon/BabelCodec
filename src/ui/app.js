@@ -2,9 +2,9 @@
  * BabelCodec UI — conversion engine stays independent of DOM.
  * Security: all untrusted strings use textContent / esc(); no unsafe innerHTML.
  */
-import * as BC from '../api/babelcodec.js';
-import { createInspectorView } from './inspector-view.js';
-import { createStructureView } from './structure-view.js';
+import * as BC from '../api/babelcodec.js?v=0.2.1';
+import { createInspectorView } from './inspector-view.js?v=0.2.1';
+import { createStructureView } from './structure-view.js?v=0.2.1';
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 let currentBytes = null;
@@ -251,7 +251,7 @@ async function onFileSelected(ev) {
 
 /** HTML-escape. Entities built without literal ampersand-sequences in source. */
 function esc(s) {
-  const amp = String.fromCharCode(38); // &
+  const amp = String.fromCharCode(38);
   const entity = (name) => amp + name + ';';
   return String(s)
     .replace(/&/g, entity('amp'))
