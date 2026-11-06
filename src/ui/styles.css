@@ -339,3 +339,57 @@ textarea.io-area::placeholder { color: var(--text-dim); }
   border-radius: var(--radius);
   padding: 0.25rem 0.4rem;
 }
+
+/* —— Hardware observability (0.5.0) —— */
+.hardware-view { margin-top: 0.75rem; }
+.hw-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.8fr);
+  gap: 0.75rem;
+  align-items: start;
+}
+@media (max-width: 800px) {
+  .hw-layout { grid-template-columns: 1fr; }
+}
+.hw-schematic-wrap {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.35rem;
+  overflow: auto;
+}
+.hw-svg { display: block; max-width: 100%; height: auto; }
+.hw-box { fill: var(--bg-elevated, #1a1f2b); stroke: var(--border); stroke-width: 1.2; }
+.hw-chip { fill: #243044; stroke: #5b7cfa; stroke-width: 1; cursor: pointer; }
+.hw-reg.hw-selected .hw-chip,
+.hw-region.hw-selected .hw-box { stroke: #f0c14a; stroke-width: 2; }
+.hw-label { fill: var(--text-muted, #9aa4b2); font-size: 11px; font-family: system-ui, sans-serif; }
+.hw-chip-label { fill: #c5d0e0; font-size: 10px; font-family: var(--mono, monospace); }
+.hw-chip-val { fill: #8fd3ff; font-size: 9px; font-family: var(--mono, monospace); }
+.hw-state { fill: #f0c14a; font-size: 13px; font-family: var(--mono, monospace); font-weight: 600; }
+.hw-active { fill: #7ddea2; font-size: 12px; font-family: var(--mono, monospace); }
+.hw-caption { fill: var(--text-muted, #9aa4b2); font-size: 9px; font-family: system-ui, sans-serif; }
+.hw-detail-body { max-height: 320px; overflow: auto; font-size: 0.75rem; }
+.hw-mem-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+.hw-mem-cell {
+  font-family: var(--mono, monospace);
+  font-size: 0.7rem;
+  padding: 0.15rem 0.35rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+}
+.hw-mem-cell.hw-mem-hot {
+  border-color: #f0c14a;
+  color: #f0c14a;
+}
+.hw-mem-title { font-size: 0.8rem; margin: 0.35rem 0; color: var(--text-muted); }
+.hw-op-list { margin: 0.25rem 0 0; padding-left: 1.1rem; font-size: 0.78rem; }
+.hw-host { margin-top: 0.5rem; }
