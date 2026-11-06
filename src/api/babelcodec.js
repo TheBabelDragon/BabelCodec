@@ -2,9 +2,9 @@
  * Documented public JavaScript API for BabelCodec.
  */
 
-import * as core from '../core/index.js';
+import * as core from '../core/index.js?v=0.2.2';
 
-export const version = '0.2.1';
+export const version = '0.2.2';
 
 export const {
   ConversionError,
