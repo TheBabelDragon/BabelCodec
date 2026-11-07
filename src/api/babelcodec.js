@@ -1,6 +1,6 @@
 /**
  * Documented public JavaScript API for BabelCodec.
- * Version 0.8.0 — encoding, Unicode text, Morse blocks, logic, SHA-256, interactive computer, CPU.
+ * Version 0.9.0 — encoding, Unicode text, Morse blocks, logic, SHA-256, interactive computer, CPU, HEIF media.
  */
 
 import * as core from '../core/index.js?v=0.8.0';
@@ -8,7 +8,7 @@ import * as logic from '../logic/index.js?v=0.8.0';
 import * as sha256mod from '../sha256/index.js?v=0.8.0';
 import * as computer from '../computer/index.js?v=0.8.0';
 
-export const version = '0.8.0';
+export const version = '0.9.0';
 
 export const {
   ConversionError, ValidationError, MalformedInputError,
