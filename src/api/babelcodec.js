@@ -1,14 +1,14 @@
 /**
  * Documented public JavaScript API for BabelCodec.
- * Version 0.7.0 — encoding, Unicode text, Morse blocks, logic, SHA-256, computer, CPU.
+ * Version 0.8.0 — encoding, Unicode text, Morse blocks, logic, SHA-256, interactive computer, CPU.
  */
 
-import * as core from '../core/index.js?v=0.7.0';
-import * as logic from '../logic/index.js?v=0.7.0';
-import * as sha256mod from '../sha256/index.js?v=0.7.0';
-import * as computer from '../computer/index.js?v=0.7.0';
+import * as core from '../core/index.js?v=0.8.0';
+import * as logic from '../logic/index.js?v=0.8.0';
+import * as sha256mod from '../sha256/index.js?v=0.8.0';
+import * as computer from '../computer/index.js?v=0.8.0';
 
-export const version = '0.7.0';
+export const version = '0.8.0';
 
 export const {
   ConversionError, ValidationError, MalformedInputError,
@@ -61,6 +61,8 @@ export const {
   fullAdderTable, wordToBin32, wordToHex32, makeTraceEvent, TraceBuffer,
   captureMachineBlob, restoreMachineBlob, ExecutionHistory,
   snapshotSha256Machine, inspectComponent,
+  createSha256ArchitectureAdapter, createCpuArchitectureAdapter,
+  InteractionController, BranchingHistory,
 } = computer;
 
 export function bytesToHex(bytes, opts) { return core.encodeHex(bytes, opts); }
@@ -117,17 +119,13 @@ const api = {
   IV: sha256mod.IV, K: sha256mod.K,
   createSha256Machine: computer.createSha256Machine, Sha256Machine: computer.Sha256Machine,
   MachineState: computer.MachineState, fullAdder: computer.fullAdder, add32Ripple: computer.add32Ripple,
-  Register32: computer.Register32, RegisterBank: computer.RegisterBank,
-  Bus32: computer.Bus32, WordMemory: computer.WordMemory,
-  clock: computer.clock, stepRound: computer.stepRound, runUntilComplete: computer.runUntilComplete,
-  getMachineState: computer.getMachineState, getRegisterSnapshot: computer.getRegisterSnapshot,
-  getSignalSnapshot: computer.getSignalSnapshot, getMachineTrace: computer.getMachineTrace,
-  resetMachine: computer.resetMachine,
   snapshotSha256Machine: computer.snapshotSha256Machine,
   inspectComponent: computer.inspectComponent,
   inspectAdd32: computer.inspectAdd32,
   ExecutionHistory: computer.ExecutionHistory,
-  OPERATION_FIDELITY: computer.OPERATION_FIDELITY,
+  createSha256ArchitectureAdapter: computer.createSha256ArchitectureAdapter,
+  InteractionController: computer.InteractionController,
+  BranchingHistory: computer.BranchingHistory,
 };
 
 if (typeof window !== 'undefined') {
