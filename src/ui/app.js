@@ -2,12 +2,14 @@
  * BabelCodec UI — conversion engine stays independent of DOM.
  * Security: all untrusted strings use textContent / esc(); no unsafe innerHTML.
  */
-import * as BC from '../api/babelcodec.js?v=0.5.0';
-import { createInspectorView } from './inspector-view.js?v=0.5.0';
-import { createStructureView } from './structure-view.js?v=0.5.0';
-import { createLogicView } from './logic-view.js?v=0.5.0';
-import { createSha256Lab } from './sha256-lab.js?v=0.5.0';
-import { createComputerLab } from './computer-lab.js?v=0.5.0';
+import * as BC from '../api/babelcodec.js?v=0.7.0';
+import { createInspectorView } from './inspector-view.js?v=0.7.0';
+import { createStructureView } from './structure-view.js?v=0.7.0';
+import { createLogicView } from './logic-view.js?v=0.7.0';
+import { createSha256Lab } from './sha256-lab.js?v=0.7.0';
+import { createComputerLab } from './computer-lab.js?v=0.7.0';
+import { createTextLab } from './text-lab.js?v=0.7.0';
+import { createCpuLab } from './cpu-lab.js?v=0.7.0';
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 let currentBytes = null;
@@ -18,6 +20,8 @@ let structureView = null;
 let logicView = null;
 let sha256View = null;
 let computerView = null;
+let textView = null;
+let cpuView = null;
 
 function init() {
   Object.assign(els, {
@@ -34,6 +38,8 @@ function init() {
     viewLogic: $('#view-logic'),
     viewSha256: $('#view-sha256'),
     viewComputer: $('#view-computer'),
+    viewCpu: $('#view-cpu'),
+    viewText: $('#view-text'),
   });
 
   const formats = [
@@ -153,6 +159,12 @@ function init() {
   computerView = createComputerLab($('#computer-root'), {
     onDiagnostic: setDiagnostics,
   });
+  if ($('#text-root')) {
+    textView = createTextLab($('#text-root'), { onDiagnostic: setDiagnostics });
+  }
+  if ($('#cpu-root')) {
+    cpuView = createCpuLab($('#cpu-root'), { onDiagnostic: setDiagnostics });
+  }
 
   const transferBtn = document.createElement('button');
   transferBtn.type = 'button';
@@ -212,6 +224,8 @@ function switchTab(name) {
   if (els.viewLogic) els.viewLogic.hidden = name !== 'logic';
   if (els.viewSha256) els.viewSha256.hidden = name !== 'sha256';
   if (els.viewComputer) els.viewComputer.hidden = name !== 'computer';
+  if (els.viewCpu) els.viewCpu.hidden = name !== 'cpu';
+  if (els.viewText) els.viewText.hidden = name !== 'text';
   if (name === 'inspector' && inspectorView) inspectorView.refresh();
   if (name === 'computer' && computerView) computerView.refresh();
   if (name === 'structure' && structureView) structureView.refresh();
