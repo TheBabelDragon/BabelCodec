@@ -227,8 +227,16 @@ function init() {
 
 function switchTab(name) {
   document.querySelectorAll('[data-tab]').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.tab === name);
-    btn.setAttribute('aria-selected', btn.dataset.tab === name ? 'true' : 'false');
+    const on = btn.dataset.tab === name;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    if (on && typeof btn.scrollIntoView === 'function') {
+      try {
+        btn.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
+      } catch {
+        btn.scrollIntoView(false);
+      }
+    }
   });
   els.viewConverter.hidden = name !== 'converter';
   els.viewInspector.hidden = name !== 'inspector';
