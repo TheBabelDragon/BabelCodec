@@ -10,6 +10,7 @@ import { createSha256Lab } from './sha256-lab.js?v=0.7.0';
 import { createComputerLab } from './computer-lab.js?v=0.7.0';
 import { createTextLab } from './text-lab.js?v=0.7.0';
 import { createCpuLab } from './cpu-lab.js?v=0.7.0';
+import { createMediaLab } from './media-lab.js?v=0.9.0';
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 let currentBytes = null;
@@ -22,6 +23,7 @@ let sha256View = null;
 let computerView = null;
 let textView = null;
 let cpuView = null;
+let mediaView = null;
 
 function init() {
   Object.assign(els, {
@@ -40,6 +42,7 @@ function init() {
     viewComputer: $('#view-computer'),
     viewCpu: $('#view-cpu'),
     viewText: $('#view-text'),
+    viewMedia: $('#view-media'),
   });
 
   const formats = [
@@ -165,6 +168,15 @@ function init() {
   if ($('#cpu-root')) {
     cpuView = createCpuLab($('#cpu-root'), { onDiagnostic: setDiagnostics });
   }
+  if ($('#media-root')) {
+    mediaView = createMediaLab($('#media-root'), {
+      onDiagnostic: setDiagnostics,
+      onBytes: (bytes) => {
+        currentBytes = bytes;
+        pushBytesToViews(bytes);
+      },
+    });
+  }
 
   const transferBtn = document.createElement('button');
   transferBtn.type = 'button';
@@ -226,6 +238,7 @@ function switchTab(name) {
   if (els.viewComputer) els.viewComputer.hidden = name !== 'computer';
   if (els.viewCpu) els.viewCpu.hidden = name !== 'cpu';
   if (els.viewText) els.viewText.hidden = name !== 'text';
+  if (els.viewMedia) els.viewMedia.hidden = name !== 'media';
   if (name === 'inspector' && inspectorView) inspectorView.refresh();
   if (name === 'computer' && computerView) computerView.refresh();
   if (name === 'structure' && structureView) structureView.refresh();
