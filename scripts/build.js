@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const EXPECTED_VERSION = '0.5.0';
+const EXPECTED_VERSION = '0.7.0';
 
 const required = [
   'index.html',
@@ -21,6 +21,12 @@ const required = [
   'src/ui/sha256-lab.js',
   'src/ui/computer-lab.js',
   'src/ui/hardware-view.js',
+  'src/ui/text-lab.js',
+  'src/ui/cpu-lab.js',
+  'src/text/index.js',
+  'src/codecs/morse/index.js',
+  'src/scripts/index.js',
+  'src/digest/index.js',
   'src/computer/inspection/index.js',
   'src/computer/inspection/snapshot.js',
   'src/computer/inspection/signals.js',
