@@ -28,7 +28,6 @@ export {
   resetMachine,
 } from './sha256-machine.js';
 
-// Inspection layer (architecture-neutral)
 export {
   EXTENSION_POINTS,
   defineComponent,
@@ -52,4 +51,9 @@ export {
   ExecutionHistory,
   snapshotSha256Machine,
   inspectComponent,
+  ExecutionScheduler,
+  EXPERIMENT_SCHEMA,
+  createExperiment,
+  parseExperiment,
+  compareSnapshots,
 } from './inspection/index.js';
