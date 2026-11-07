@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const EXPECTED_VERSION = '0.8.0';
+const EXPECTED_VERSION = '0.9.0';
 
 const required = [
   'index.html',
@@ -23,6 +23,13 @@ const required = [
   'src/ui/hardware-view.js',
   'src/ui/text-lab.js',
   'src/ui/cpu-lab.js',
+  'src/ui/media-lab.js',
+  'src/media/heif/index.js',
+  'src/media/heif/decoder.js',
+  'src/media/heif/detect.js',
+  'src/media/heif/boxes.js',
+  'src/media/heif/convert.js',
+  'docs/HEIF_DECODER.md',
   'src/text/index.js',
   'src/codecs/morse/index.js',
   'src/scripts/index.js',
