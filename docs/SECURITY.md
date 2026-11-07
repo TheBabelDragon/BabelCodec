@@ -35,3 +35,12 @@ Runtime: **zero** npm production dependencies. Uses browser/Node platform APIs o
 ## Supply chain
 
 Static GitHub Pages deployment from this repository. Review Actions workflows before merging third-party PRs.
+
+## Media Decoder (HEIC / HEIF)
+
+- Structural inspection and optional pixel decode run entirely in the browser/worker.
+- Original file bytes are never uploaded; they may be shared in-memory with the Hex Inspector.
+- Box sizes and offsets are bounds-checked; extended (64-bit) sizes that exceed safe integer range are rejected.
+- Embedded content (e.g. EXIF, item data) is treated as data only — never executed.
+- Optional WASM pixel backends must be same-origin (or `blob:`) and are not loaded unless explicitly registered via `setHeifDecoderBackend`.
+- Default file size limit matches the UI soft-limit (**8 MiB**), configurable via `options.maxBytes`.
