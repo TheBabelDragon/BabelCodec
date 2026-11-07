@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="BabelCodec — offline-first universal encoding, decoding, and byte/packet inspector workbench." />
-  <title>BabelCodec — Byte & Encoding Workbench</title>
-  <link rel="stylesheet" href="src/ui/styles.css?v=0.5.0" />
+  <meta name="description" content="BabelCodec — offline-first encoding, Unicode text lab, Morse, SHA-256 computer, educational CPU." />
+  <title>BabelCodec — Byte & Symbolic Workbench</title>
+  <link rel="stylesheet" href="src/ui/styles.css?v=0.7.0" />
 </head>
 <body>
   <header class="app-header">
     <div class="brand">
       <span class="brand-name">BabelCodec</span>
-      <span class="brand-tag">encoding · inspection · logic · SHA-256 · computer</span>
+      <span class="brand-tag">encoding · unicode · morse · SHA-256 · computer · CPU</span>
     </div>
     <nav class="tab-nav" role="tablist" aria-label="Workbench views">
       <button type="button" class="tab-btn active" data-tab="converter" role="tab" aria-selected="true">Converter</button>
@@ -20,6 +20,8 @@
       <button type="button" class="tab-btn" data-tab="logic" role="tab" aria-selected="false">Logic Lab</button>
       <button type="button" class="tab-btn" data-tab="sha256" role="tab" aria-selected="false">SHA-256 Lab</button>
       <button type="button" class="tab-btn" data-tab="computer" role="tab" aria-selected="false">Computer Lab</button>
+      <button type="button" class="tab-btn" data-tab="cpu" role="tab" aria-selected="false">CPU Lab</button>
+      <button type="button" class="tab-btn" data-tab="text" role="tab" aria-selected="false">Text Lab</button>
     </nav>
     <div class="header-actions">
       <span id="file-meta" class="diag-meta"></span>
@@ -98,19 +100,27 @@
       <div id="computer-root" class="computer-root"></div>
     </div>
 
+    <div id="view-cpu" class="view-panel" hidden>
+      <div id="cpu-root" class="cpu-root"></div>
+    </div>
+
+    <div id="view-text" class="view-panel" hidden>
+      <div id="text-root" class="text-root"></div>
+    </div>
+
     <div class="diagnostics" id="diagnostics" role="status" aria-live="polite">
       <span class="diag-info">Ready.</span>
     </div>
   </main>
 
   <footer class="app-footer">
-    <span>BabelCodec v0.5.0 · offline · client-side only</span>
+    <span>BabelCodec v0.7.0 · offline · client-side only</span>
     <span>
       <a href="https://github.com/TheBabelDragon/BabelCodec">GitHub</a>
       · TheBabelDragon
     </span>
   </footer>
 
-  <script type="module" src="src/ui/app.js?v=0.5.0"></script>
+  <script type="module" src="src/ui/app.js?v=0.7.0"></script>
 </body>
 </html>
