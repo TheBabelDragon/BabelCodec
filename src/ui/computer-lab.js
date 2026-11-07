@@ -1,6 +1,6 @@
 /**
- * Computer Lab — gate-level SHA-256 machine with hardware observability.
- * Driven exclusively by src/computer/Sha256Machine — no parallel mock state.
+ * Computer Lab — interactive SHA-256 workbench.
+ * All controls drive the real Sha256Machine via architecture adapters.
  */
 
 import {
@@ -8,10 +8,13 @@ import {
   MachineState,
   ExecutionHistory,
   snapshotSha256Machine,
-  serializeSnapshot,
-} from '../computer/index.js?v=0.5.0';
-import { sha256Hex } from '../sha256/index.js?v=0.5.0';
-import { createHardwareView } from './hardware-view.js?v=0.5.0';
+  createSha256ArchitectureAdapter,
+  InteractionController,
+  BranchingHistory,
+  ExecutionScheduler,
+} from '../computer/index.js?v=0.8.0';
+import { sha256Hex } from '../sha256/index.js?v=0.8.0';
+import { createHardwareView } from './hardware-view.js?v=0.8.0';
 
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
@@ -20,6 +23,7 @@ function el(tag, attrs = {}, children = []) {
     else if (k === 'textContent') node.textContent = v;
     else if (k === 'hidden') { if (v) node.hidden = true; }
     else if (k === 'value') node.value = v;
+    else if (k === 'disabled') node.disabled = !!v;
     else node.setAttribute(k, v);
   }
   for (const c of children) {
@@ -29,29 +33,41 @@ function el(tag, attrs = {}, children = []) {
   return node;
 }
 
+function bigJson(obj) {
+  return JSON.stringify(obj, (_k, v) => (typeof v === 'bigint' ? v.toString() : v), 2);
+}
+
 export function createComputerLab(container, opts = {}) {
   const onDiagnostic = opts.onDiagnostic || (() => {});
   const machine = createSha256Machine();
   machine.traceEnabled = true;
+  const arch = createSha256ArchitectureAdapter(machine);
+  const interaction = new InteractionController(arch, { origin: 'computer-lab' });
   const history = new ExecutionHistory(machine, { maxFrames: 512 });
+  const branchHist = new BranchingHistory(machine, { adapter: arch });
+  const scheduler = new ExecutionScheduler(machine, {
+    history,
+    onCycle: () => refresh(),
+    onStop: (reason) => { onDiagnostic(`Stopped: ${reason}`, 'info'); refresh(); },
+  });
 
   let autoTimer = null;
   let hardware = null;
+  let memPage = 0;
+  const MEM_PAGE_SIZE = 16;
 
   container.textContent = '';
-  container.classList.add('computer-lab');
-
-  const title = el('div', { className: 'panel-title', textContent: 'Computer Lab — hardware observability' });
-  const note = el('p', {
+  container.classList.add('computer-lab', 'workbench');
+  container.appendChild(el('div', { className: 'panel-title', textContent: 'Computer Lab — interactive workbench' }));
+  container.appendChild(el('p', {
     className: 'diag-meta',
-    textContent: 'Live schematic + inspection driven by the real Sha256Machine. Add is gate-expanded; Ch/Maj/Σ are behavioral Boolean. Rewind restores full machine state.',
-  });
+    textContent: 'Real gate-level SHA-256 machine. Writes use the interaction layer (K is protected). History rewinds actual machine state.',
+  }));
 
   const inputPanel = el('section', { className: 'panel lab-panel' });
   inputPanel.appendChild(el('div', { className: 'panel-title', textContent: 'Message' }));
-  const inputArea = el('textarea', {
-    id: 'cpu-input', rows: '2', placeholder: 'Text message (UTF-8)', spellcheck: 'false', className: 'mono',
-  });
+  const inputArea = el('textarea', { rows: '2', placeholder: 'UTF-8 message (e.g. abc)', spellcheck: 'false', className: 'mono' });
+  inputArea.value = 'abc';
   inputPanel.appendChild(inputArea);
 
   const ctrlPanel = el('section', { className: 'panel lab-panel' });
@@ -67,138 +83,263 @@ export function createComputerLab(container, opts = {}) {
   row1.append(btnLoad, btnClock, btnRound, btnRun, btnPause, btnResume, btnReset);
 
   const histRow = el('div', { className: 'btn-row' });
-  const btnBack = el('button', { type: 'button', className: 'btn btn-ghost', textContent: '◀ Step back' });
-  const btnFwd = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Step forward ▶' });
+  const btnBack = el('button', { type: 'button', className: 'btn btn-ghost', textContent: '\u25c0 Back' });
+  const btnFwd = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Forward \u25b6' });
   const btnLive = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Go live' });
-  const histStatus = el('span', { className: 'diag-meta', id: 'cpu-hist', textContent: 'history: —' });
-  histRow.append(btnBack, btnFwd, btnLive, histStatus);
+  const btnBranch = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Branch here' });
+  const histStatus = el('span', { className: 'diag-meta', textContent: 'history: \u2014' });
+  histRow.append(btnBack, btnFwd, btnLive, btnBranch, histStatus);
 
   const speedRow = el('div', { className: 'btn-row' });
-  const speedSel = el('select', { id: 'cpu-speed', 'aria-label': 'Auto step speed' }, [
-    el('option', { value: '0', textContent: 'Manual only' }),
-    el('option', { value: '500', textContent: 'Auto 2 Hz' }),
-    el('option', { value: '200', textContent: 'Auto 5 Hz' }),
-    el('option', { value: '50', textContent: 'Auto 20 Hz' }),
-  ]);
-  speedSel.value = '0';
-  const btnAuto = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Start auto-clock' });
+  const speedSel = el('select', { className: 'mono' });
+  for (const [v, l] of [['0', 'Manual'], ['50', 'Fast'], ['200', 'Medium'], ['500', 'Slow']]) {
+    const o = document.createElement('option'); o.value = v; o.textContent = l; speedSel.appendChild(o);
+  }
+  const btnAuto = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Auto-clock' });
   const btnStopAuto = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Stop auto' });
-  speedRow.append(el('label', { textContent: 'Speed ' }, [speedSel]), btnAuto, btnStopAuto);
+  const stateBadge = el('span', { className: 'diag-meta workbench-state', textContent: 'state: IDLE' });
+  speedRow.append(el('label', { textContent: 'Speed ' }, [speedSel]), btnAuto, btnStopAuto, stateBadge);
   ctrlPanel.append(row1, histRow, speedRow);
 
-  const statePanel = el('section', { className: 'panel lab-panel' });
-  statePanel.appendChild(el('div', { className: 'panel-title', textContent: 'Machine state' }));
-  const stateOut = el('pre', { className: 'mono inspect-out', id: 'cpu-state', textContent: 'IDLE' });
-  statePanel.appendChild(stateOut);
+  const hwPanel = el('section', { className: 'panel lab-panel' });
+  hwPanel.appendChild(el('div', { className: 'panel-title', textContent: 'Hardware schematic' }));
+  const hwRoot = el('div', { className: 'hardware-root' });
+  hwPanel.appendChild(hwRoot);
 
-  const digPanel = el('section', { className: 'panel lab-panel' });
-  digPanel.appendChild(el('div', { className: 'panel-title', textContent: 'Digest & independent check' }));
-  const digOut = el('div', { className: 'mono digest-hex', id: 'cpu-digest', textContent: '—' });
-  const cmpOut = el('div', { className: 'diag-meta', id: 'cpu-cmp', textContent: '' });
-  digPanel.append(digOut, cmpOut);
+  const regPanel = el('section', { className: 'panel lab-panel' });
+  regPanel.appendChild(el('div', { className: 'panel-title', textContent: 'Registers (A\u2013H)' }));
+  const regGrid = el('div', { className: 'reg-grid' });
+  regPanel.appendChild(regGrid);
+  const regWriteRow = el('div', { className: 'btn-row' });
+  const regSel = el('select', { className: 'mono' });
+  for (const r of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) {
+    const o = document.createElement('option'); o.value = r; o.textContent = r; regSel.appendChild(o);
+  }
+  const regVal = el('input', { type: 'text', className: 'mono', value: '0x0' });
+  const btnWriteReg = el('button', { type: 'button', className: 'btn', textContent: 'Write register' });
+  regWriteRow.append(regSel, regVal, btnWriteReg);
+  regPanel.appendChild(regWriteRow);
 
-  const tracePanel = el('section', { className: 'panel lab-panel' });
-  const traceHead = el('div', { className: 'panel-title' });
-  traceHead.appendChild(document.createTextNode('Trace '));
-  const btnExport = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Export JSON' });
-  traceHead.appendChild(btnExport);
-  tracePanel.appendChild(traceHead);
-  const traceOut = el('pre', { className: 'mono inspect-out', id: 'cpu-trace', textContent: '—' });
-  tracePanel.appendChild(traceOut);
+  const memPanel = el('section', { className: 'panel lab-panel' });
+  memPanel.appendChild(el('div', { className: 'panel-title', textContent: 'Memory explorer' }));
+  const memCtrl = el('div', { className: 'btn-row' });
+  const memSel = el('select', { className: 'mono' });
+  for (const m of [['W', 'W schedule (rw)'], ['H', 'H hash state (rw)'], ['K', 'K constants (ro)']]) {
+    const o = document.createElement('option'); o.value = m[0]; o.textContent = m[1]; memSel.appendChild(o);
+  }
+  const btnMemPrev = el('button', { type: 'button', className: 'btn btn-ghost', textContent: '\u25c0 Page' });
+  const btnMemNext = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Page \u25b6' });
+  const memPageLabel = el('span', { className: 'diag-meta', textContent: 'page 0' });
+  memCtrl.append(memSel, btnMemPrev, btnMemNext, memPageLabel);
+  const memTable = el('pre', { className: 'mono inspect-out mem-table', textContent: '\u2014' });
+  const memWriteRow = el('div', { className: 'btn-row' });
+  const memIdx = el('input', { type: 'number', className: 'mono', value: '0', min: '0' });
+  const memVal = el('input', { type: 'text', className: 'mono', value: '0x0' });
+  const btnWriteMem = el('button', { type: 'button', className: 'btn', textContent: 'Write word' });
+  memWriteRow.append(el('span', { className: 'diag-meta', textContent: 'idx' }), memIdx, memVal, btnWriteMem);
+  memPanel.append(memCtrl, memTable, memWriteRow);
 
-  const hwHost = el('div', { className: 'hw-host' });
-  container.append(title, note, inputPanel, ctrlPanel, statePanel, digPanel, hwHost, tracePanel);
+  const busPanel = el('section', { className: 'panel lab-panel' });
+  busPanel.appendChild(el('div', { className: 'panel-title', textContent: 'Buses & digest' }));
+  const busOut = el('pre', { className: 'mono inspect-out', textContent: '\u2014' });
+  const cmpOut = el('div', { className: 'diag-meta', textContent: '' });
+  busPanel.append(busOut, cmpOut);
 
-  hardware = createHardwareView(hwHost, {
-    getMachine: () => machine,
-    onSelect: (id) => onDiagnostic(`Selected ${id}`, 'info'),
-  });
+  const dbgPanel = el('section', { className: 'panel lab-panel' });
+  dbgPanel.appendChild(el('div', { className: 'panel-title', textContent: 'Breakpoints / watchpoints' }));
+  const dbgRow = el('div', { className: 'btn-row' });
+  const bpCycle = el('input', { type: 'number', className: 'mono', value: '10', min: '0' });
+  const btnBp = el('button', { type: 'button', className: 'btn', textContent: 'Add cycle BP' });
+  const btnWpA = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Watch A' });
+  const btnSchedRun = el('button', { type: 'button', className: 'btn', textContent: 'Scheduler run' });
+  const btnSchedStop = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Stop' });
+  dbgRow.append(bpCycle, btnBp, btnWpA, btnSchedRun, btnSchedStop);
+  const dbgOut = el('pre', { className: 'mono inspect-out', textContent: 'No breakpoints' });
+  dbgPanel.append(dbgRow, dbgOut);
 
-  function stopAuto() {
-    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+  const auditPanel = el('section', { className: 'panel lab-panel' });
+  auditPanel.appendChild(el('div', { className: 'panel-title', textContent: 'Mutation audit / export' }));
+  const auditOut = el('pre', { className: 'mono inspect-out', textContent: '\u2014' });
+  const btnExport = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Export trace JSON' });
+  auditPanel.append(auditOut, btnExport);
+
+  const workspace = el('div', { className: 'workbench-grid' });
+  workspace.append(regPanel, memPanel, busPanel, dbgPanel);
+  container.append(inputPanel, ctrlPanel, hwPanel, workspace, auditPanel);
+
+  hardware = createHardwareView(hwRoot, { machine, getSnapshot: () => snapshotSha256Machine(machine) });
+
+  function stopAuto() { if (autoTimer != null) { clearInterval(autoTimer); autoTimer = null; } }
+
+  function renderRegs() {
+    regGrid.textContent = '';
+    for (const r of arch.listRegisters()) {
+      const cell = el('div', { className: 'reg-cell' });
+      cell.appendChild(el('span', { className: 'reg-label', textContent: r.label }));
+      cell.appendChild(el('span', { className: 'reg-hex mono', textContent: r.hex }));
+      regGrid.appendChild(cell);
+    }
+  }
+
+  function renderMemory() {
+    const id = memSel.value;
+    const meta = arch.getMetadata().memories.find((m) => m.id === id);
+    const size = meta?.size ?? 64;
+    const maxPage = Math.max(0, Math.ceil(size / MEM_PAGE_SIZE) - 1);
+    if (memPage > maxPage) memPage = maxPage;
+    memPageLabel.textContent = `page ${memPage}/${maxPage} · ${meta?.access || '?'}${meta?.constant ? ' · constant' : ''}`;
+    const start = memPage * MEM_PAGE_SIZE;
+    const lines = [];
+    for (let i = start; i < Math.min(start + MEM_PAGE_SIZE, size); i++) {
+      try {
+        const w = arch.readMemory(id, i);
+        lines.push(`[${String(i).padStart(2, '0')}] ${w.hex}`);
+      } catch { lines.push(`[${String(i).padStart(2, '0')}] \u2014`); }
+    }
+    memTable.textContent = lines.join('\n') || '\u2014';
+  }
+
+  function renderBuses() {
+    const st = arch.getState();
+    const buses = arch.listBuses().map((b) => `${b.id}=${b.hex}`).join('  ');
+    let digest = null;
+    try { if (st.state === MachineState.COMPLETE || st.state === 'COMPLETE') digest = machine.getDigestHex?.(); } catch { /* */ }
+    busOut.textContent = [`state=${st.state} cycle=${st.cycle} block=${st.blockIndex}/${st.totalBlocks} round=${st.round}`, buses, digest ? `digest=${digest}` : 'digest=\u2014'].join('\n');
+    if (digest) {
+      try {
+        const ref = sha256Hex(inputArea.value);
+        cmpOut.textContent = ref === digest ? '\u2713 Matches functional engine' : `\u2717 Mismatch functional=${ref}`;
+        cmpOut.className = ref === digest ? 'diag-ok' : 'diag-err';
+      } catch { cmpOut.textContent = ''; }
+    } else cmpOut.textContent = '';
+  }
+
+  function renderDbg() {
+    const bps = scheduler.breakpoints || [];
+    const wps = scheduler.watchpoints || [];
+    dbgOut.textContent = [
+      `breakpoints: ${bps.length ? bps.map((b) => `${b.id} ${b.type}`).join('; ') : 'none'}`,
+      `watchpoints: ${wps.length ? wps.map((w) => `${w.id} ${w.kind}:${w.target}`).join('; ') : 'none'}`,
+      `scheduler running: ${scheduler.isRunning?.() ? 'yes' : 'no'}`,
+    ].join('\n');
   }
 
   function refresh() {
-    const st = machine.getMachineState();
-    stateOut.textContent = JSON.stringify(st, null, 2);
-    digOut.textContent = st.digestHex || '—';
-    if (st.digestHex) {
-      try {
-        const ref = sha256Hex(inputArea.value);
-        cmpOut.textContent = ref === st.digestHex ? '✓ Matches functional engine' : `✗ Mismatch functional=${ref}`;
-      } catch { cmpOut.textContent = ''; }
-    } else cmpOut.textContent = '';
-    const hs = history.status();
-    histStatus.textContent = `history: ${hs.index + 1}/${hs.length}${hs.live ? ' (live)' : ''} cycle=${hs.cycle ?? '—'}`;
-    const tr = machine.getMachineTrace().slice(-16);
-    traceOut.textContent = tr.length ? tr.map((e) => `${e.cycle} ${e.type} ${e.state}`).join('\n') : '—';
-    hardware.refresh();
+    const st = arch.getState();
+    stateBadge.textContent = `state: ${st.state} · cycle ${st.cycle}`;
+    renderRegs(); renderMemory(); renderBuses(); renderDbg();
+    const hs = history.status?.() || {};
+    histStatus.textContent = `history: ${(hs.index ?? 0) + 1}/${hs.length ?? 0}${hs.live ? ' (live)' : ''} · branches ${branchHist.listBranches().length}`;
+    const audit = interaction.getAudit().slice(-5);
+    auditOut.textContent = audit.length ? audit.map((e) => `${e.operation} ${e.componentId} ok=${e.validation.ok}`).join('\n') : 'No mutations yet';
+    if (hardware?.refresh) hardware.refresh();
   }
 
   function afterStep() {
     history.record(snapshotSha256Machine(machine));
+    branchHist.record({ kind: 'step' });
     refresh();
   }
 
   btnLoad.addEventListener('click', () => {
-    stopAuto(); history.clear();
+    stopAuto(); history.clear(); branchHist.clear(); interaction.clearAudit();
     machine.loadMessage(inputArea.value || '');
     history.record(snapshotSha256Machine(machine));
-    onDiagnostic(`Loaded message (${machine.messageLength} bytes, ${machine.totalBlocks} blocks)`);
+    branchHist.record({ kind: 'load' });
+    onDiagnostic(`Loaded (${machine.messageLength} bytes, ${machine.totalBlocks} blocks)`, 'ok');
     refresh();
   });
-  btnClock.addEventListener('click', () => { history.goLive(); machine.resume(); machine.clock(); afterStep(); });
-  btnRound.addEventListener('click', () => { history.goLive(); machine.resume(); machine.stepRound(); afterStep(); });
+  btnClock.addEventListener('click', () => { history.goLive?.(); machine.resume?.(); machine.clock(); afterStep(); });
+  btnRound.addEventListener('click', () => { history.goLive?.(); machine.resume?.(); machine.stepRound(); afterStep(); });
   btnRun.addEventListener('click', () => {
-    stopAuto(); history.goLive(); machine.resume(); machine.runUntilComplete(); afterStep();
-    onDiagnostic(machine.state === MachineState.COMPLETE ? 'Complete' : `Stopped: ${machine.state}`);
+    stopAuto(); history.goLive?.(); machine.resume?.(); machine.runUntilComplete(); afterStep();
+    onDiagnostic(machine.state === MachineState.COMPLETE || machine.state === 'COMPLETE' ? 'Complete' : `Stopped: ${machine.state}`, 'ok');
   });
-  btnPause.addEventListener('click', () => { machine.pause(); stopAuto(); refresh(); });
-  btnResume.addEventListener('click', () => { machine.resume(); refresh(); });
-  btnReset.addEventListener('click', () => { stopAuto(); history.clear(); machine.reset(); onDiagnostic('Reset'); refresh(); });
-  btnBack.addEventListener('click', () => { stopAuto(); if (history.stepBack()) { onDiagnostic('Stepped back', 'info'); refresh(); } });
-  btnFwd.addEventListener('click', () => { if (history.stepForward()) { onDiagnostic('Stepped forward', 'info'); refresh(); } });
-  btnLive.addEventListener('click', () => { history.goLive(); refresh(); });
+  btnPause.addEventListener('click', () => { machine.pause?.(); machine.paused = true; stopAuto(); scheduler.stop?.('pause'); refresh(); });
+  btnResume.addEventListener('click', () => { machine.resume?.(); machine.paused = false; refresh(); });
+  btnReset.addEventListener('click', () => { stopAuto(); history.clear(); branchHist.clear(); machine.reset(); onDiagnostic('Reset'); refresh(); });
+  btnBack.addEventListener('click', () => { stopAuto(); if (history.stepBack?.()) { onDiagnostic('Stepped back', 'info'); refresh(); } });
+  btnFwd.addEventListener('click', () => { if (history.stepForward?.()) { onDiagnostic('Stepped forward', 'info'); refresh(); } });
+  btnLive.addEventListener('click', () => { history.goLive?.(); refresh(); });
+  btnBranch.addEventListener('click', () => {
+    const br = branchHist.activeBranch;
+    if (!br?.frames?.length) { onDiagnostic('Nothing to branch from', 'info'); return; }
+    const r = branchHist.branchFrom(Math.max(0, br.frames.length - 1), `branch@${machine.cycle}`);
+    onDiagnostic(r.ok ? `Branched ${r.branchId}` : r.message, r.ok ? 'ok' : 'err');
+    refresh();
+  });
   btnAuto.addEventListener('click', () => {
     stopAuto();
     const ms = Number(speedSel.value);
     if (!ms) return;
-    history.goLive(); machine.resume();
+    history.goLive?.(); machine.resume?.();
     autoTimer = setInterval(() => {
-      if (machine.paused || machine.state === MachineState.COMPLETE || machine.state === MachineState.ERROR) {
+      if (machine.paused || machine.state === MachineState.COMPLETE || machine.state === 'COMPLETE' || machine.state === MachineState.ERROR) {
         stopAuto(); refresh(); return;
       }
       machine.clock(); afterStep();
     }, ms);
   });
   btnStopAuto.addEventListener('click', () => { stopAuto(); refresh(); });
+  btnWriteReg.addEventListener('click', () => {
+    const r = interaction.writeRegister(regSel.value, regVal.value);
+    onDiagnostic(r.ok ? `Wrote ${regSel.value}` : r.event.validation.message, r.ok ? 'ok' : 'err');
+    branchHist.record({ kind: 'mutation', op: 'register' });
+    refresh();
+  });
+  btnWriteMem.addEventListener('click', () => {
+    const r = interaction.writeMemory(memSel.value, Number(memIdx.value), memVal.value);
+    onDiagnostic(r.ok ? `Wrote ${memSel.value}[${memIdx.value}]` : r.event.validation.message, r.ok ? 'ok' : 'err');
+    branchHist.record({ kind: 'mutation', op: 'memory' });
+    refresh();
+  });
+  memSel.addEventListener('change', () => { memPage = 0; renderMemory(); });
+  btnMemPrev.addEventListener('click', () => { if (memPage > 0) { memPage -= 1; renderMemory(); } });
+  btnMemNext.addEventListener('click', () => { memPage += 1; renderMemory(); });
+  btnBp.addEventListener('click', () => {
+    const id = scheduler.addBreakpoint({ type: 'cycle', params: { cycle: Number(bpCycle.value) } });
+    onDiagnostic(`BP ${id} @ cycle ${bpCycle.value}`, 'ok');
+    renderDbg();
+  });
+  btnWpA.addEventListener('click', () => {
+    const id = scheduler.addWatchpoint({ kind: 'register', target: 'A' });
+    onDiagnostic(`Watch ${id} on A`, 'ok');
+    renderDbg();
+  });
+  btnSchedRun.addEventListener('click', () => { history.goLive?.(); machine.resume?.(); scheduler.run({ maxCycles: 100000 }); });
+  btnSchedStop.addEventListener('click', () => { scheduler.stop('ui'); refresh(); });
   btnExport.addEventListener('click', () => {
     const payload = {
-      trace: machine.getMachineTrace(),
-      history: JSON.parse(history.exportJSON()),
-      snapshot: JSON.parse(serializeSnapshot(snapshotSha256Machine(machine))),
+      version: '0.8.0',
+      architecture: arch.getMetadata().architectureId,
+      state: arch.getState(),
+      registers: arch.listRegisters(),
+      audit: interaction.getAudit(),
+      branches: branchHist.listBranches(),
+      snapshot: snapshotSha256Machine(machine),
     };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const blob = new Blob([bigJson(payload)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'babelcodec-machine-trace.json';
+    a.download = 'babelcodec-workbench-export.json';
     a.click();
     URL.revokeObjectURL(a.href);
+    onDiagnostic('Exported', 'ok');
   });
 
   function loadBytes(bytesOrText) {
-    stopAuto(); history.clear();
-    if (typeof bytesOrText === 'string') {
-      inputArea.value = bytesOrText;
-      machine.loadMessage(bytesOrText);
-    } else {
-      inputArea.value = '';
-      machine.loadMessage(bytesOrText);
-    }
+    stopAuto(); history.clear(); branchHist.clear();
+    if (typeof bytesOrText === 'string') { inputArea.value = bytesOrText; machine.loadMessage(bytesOrText); }
+    else { inputArea.value = ''; machine.loadMessage(bytesOrText); }
     history.record(snapshotSha256Machine(machine));
+    branchHist.record({ kind: 'load' });
     refresh();
   }
 
+  machine.loadMessage(inputArea.value);
+  history.record(snapshotSha256Machine(machine));
+  branchHist.record({ kind: 'init' });
   refresh();
-  return { machine, loadBytes, refresh };
+
+  return { machine, loadBytes, refresh, architecture: arch, interaction, scheduler, branchHistory: branchHist };
 }
