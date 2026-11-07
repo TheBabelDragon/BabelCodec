@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const EXPECTED_VERSION = '0.7.0';
+const EXPECTED_VERSION = '0.8.0';
 
 const required = [
   'index.html',
@@ -34,6 +34,9 @@ const required = [
   'src/computer/inspection/history.js',
   'src/computer/inspection/metadata.js',
   'src/computer/inspection/adapter-sha256.js',
+  'src/computer/architecture/index.js',
+  'src/computer/interaction/index.js',
+  'src/computer/history/index.js',
   'src/api/babelcodec.js',
   'src/core/index.js',
   'src/core/registry.js',
