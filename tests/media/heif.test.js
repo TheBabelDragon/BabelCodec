@@ -16,6 +16,10 @@ import {
   parseBoxHeader,
   parseFtyp,
   DEFAULT_MAX_BYTES,
+  setHeifDecoderBackend,
+  getHeifDecoderBackend,
+  exportFilename,
+  canEncode,
 } from '../../src/media/heif/index.js';
 
 /** Minimal synthetic ftyp+meta skeleton (not a valid image, but valid ISOBMFF header). */
@@ -197,6 +201,60 @@ describe('decodeHEIF (structural path)', () => {
     const bytes = makeMinimalHeic();
     const r = await decodeHEIF(bytes);
     assert.equal(r.sourceBytes, bytes);
+  });
+});
+
+describe('decodeHEIF with mock backend', () => {
+  it('uses registered backend for pixel path', async () => {
+    const prev = getHeifDecoderBackend();
+    setHeifDecoderBackend({
+      async decode() {
+        const rgba = new Uint8ClampedArray(2 * 2 * 4);
+        rgba.fill(255);
+        return {
+          images: [{ width: 2, height: 2, rgba, isPrimary: true }],
+          codec: 'hevc',
+          warnings: ['mock'],
+        };
+      },
+    });
+    try {
+      const r = await decodeHEIF(makeMinimalHeic());
+      assert.equal(r.status, 'decoded');
+      assert.equal(r.imageCount, 1);
+      assert.equal(r.images[0].width, 2);
+      assert.ok(r.images[0].rgba);
+      assert.ok(r.warnings.some((w) => w === 'mock'));
+    } finally {
+      setHeifDecoderBackend(prev);
+    }
+  });
+
+  it('falls back when backend throws', async () => {
+    const prev = getHeifDecoderBackend();
+    setHeifDecoderBackend({
+      async decode() {
+        throw new Error('backend boom');
+      },
+    });
+    try {
+      const r = await decodeHEIF(makeMinimalHeic());
+      assert.equal(r.status, 'structural_only');
+      assert.ok(r.errors.some((e) => /backend boom/i.test(e)));
+    } finally {
+      setHeifDecoderBackend(prev);
+    }
+  });
+});
+
+describe('export helpers', () => {
+  it('exportFilename strips heic extension', () => {
+    assert.equal(exportFilename('Photo.HEIC', 'png'), 'Photo.png');
+    assert.equal(exportFilename('a.heif', 'jpeg'), 'a.jpeg');
+  });
+
+  it('canEncode is boolean in Node', () => {
+    assert.equal(typeof canEncode('image/png'), 'boolean');
   });
 });
 
