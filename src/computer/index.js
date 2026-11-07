@@ -57,3 +57,26 @@ export {
   parseExperiment,
   compareSnapshots,
 } from './inspection/index.js';
+
+export {
+  MachineCapability,
+  validateMachineAdapter,
+  formatWord,
+  parseWord,
+  createSha256ArchitectureAdapter,
+  createCpuArchitectureAdapter,
+} from './architecture/index.js';
+
+export {
+  InteractionController,
+  makeMutationEvent,
+  serializeMutation,
+} from './interaction/index.js';
+
+export { BranchingHistory } from './history/index.js';
+
+export {
+  EXPERIMENTS,
+  listExperiments,
+  getExperiment,
+} from './experiments/index.js';
