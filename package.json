@@ -1,7 +1,7 @@
 {
   "name": "babelcodec",
-  "version": "0.6.0",
-  "description": "Universal encoding, decoding, byte/packet inspector, Boolean logic engine, SHA-256 computer, and educational CPU — offline-first",
+  "version": "0.7.0",
+  "description": "Universal encoding, decoding, Unicode text lab, Morse blocks, Boolean logic, SHA-256 computer, and educational CPU — offline-first",
   "type": "module",
   "main": "src/api/babelcodec.js",
   "exports": {
@@ -10,18 +10,22 @@
     "./logic": "./src/logic/index.js",
     "./sha256": "./src/sha256/index.js",
     "./computer": "./src/computer/index.js",
-    "./cpu": "./src/cpu/index.js"
+    "./cpu": "./src/cpu/index.js",
+    "./text": "./src/text/index.js",
+    "./scripts": "./src/scripts/index.js",
+    "./morse": "./src/codecs/morse/index.js"
   },
   "scripts": {
-    "test": "node --test tests/**/*.test.js tests/logic/**/*.test.js tests/sha256/**/*.test.js tests/computer/**/*.test.js tests/cpu/**/*.test.js",
+    "test": "node --test tests/**/*.test.js tests/logic/**/*.test.js tests/sha256/**/*.test.js tests/computer/**/*.test.js tests/cpu/**/*.test.js tests/text/**/*.test.js tests/scripts/**/*.test.js tests/morse/**/*.test.js tests/digest/**/*.test.js",
     "test:core": "node --test tests/core.test.js",
     "test:logic": "node --test tests/logic/**/*.test.js",
     "test:sha256": "node --test tests/sha256/**/*.test.js",
     "test:computer": "node --test tests/computer/**/*.test.js",
     "test:cpu": "node --test tests/cpu/**/*.test.js",
+    "test:text": "node --test tests/text/**/*.test.js tests/scripts/**/*.test.js tests/morse/**/*.test.js tests/digest/**/*.test.js",
     "build": "node scripts/build.js",
-    "validate": "node --test tests/**/*.test.js tests/logic/**/*.test.js tests/sha256/**/*.test.js tests/computer/**/*.test.js tests/cpu/**/*.test.js && node scripts/build.js"
+    "validate": "npm test && npm run build"
   },
-  "keywords": ["encoding", "sha256", "cpu", "assembler", "offline"],
+  "keywords": ["encoding", "unicode", "morse", "hebrew", "sha256", "cpu", "offline"],
   "license": "MIT"
 }
