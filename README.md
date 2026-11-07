@@ -4,7 +4,7 @@
 
 **Live:** https://thebabeldragon.github.io/BabelCodec/
 
-**Version:** 0.7.0
+**Version:** 0.9.0
 
 ## Features
 
@@ -19,7 +19,8 @@
 - **CPU Lab** — educational 32-bit Harvard CPU with assembler
 - **Text Lab** — Unicode canonical form, Hebrew inspection, Morse blocks
 - **Hardware observability** — live schematic, bit-level adder inspect, memory/bus explorers, rewind/replay
-- **Zero runtime dependencies** — browser-native APIs only
+- **Media Decoder** — HEIC/HEIF structural inspection, optional pixel decode, PNG/JPEG/WebP export
+- **Zero runtime dependencies** — browser-native APIs only (optional WASM HEIF backend is pluggable)
 - **Public JS API** — `babelcodec`, `babelcodec/logic`, `babelcodec/sha256`, `babelcodec/computer`, `babelcodec/text`, `babelcodec/morse`, `babelcodec/scripts`
 
 ## Quick start
@@ -59,6 +60,7 @@ npm run validate
 - [SHA-256 Engine](docs/SHA256_ENGINE.md)
 - [Computer Architecture](docs/COMPUTER_ARCHITECTURE.md)
 - [Security](docs/SECURITY.md)
+- [HEIF / HEIC Decoder](docs/HEIF_DECODER.md)
 
 ## Security
 
