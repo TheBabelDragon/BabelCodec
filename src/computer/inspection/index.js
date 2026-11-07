@@ -1,6 +1,5 @@
 /**
  * Architecture-neutral hardware inspection layer.
- * Package surface for snapshots, signals, trace, history, and adapters.
  */
 
 export {
@@ -45,3 +44,12 @@ export {
   snapshotSha256Machine,
   inspectComponent,
 } from './adapter-sha256.js';
+
+export { ExecutionScheduler } from './scheduler.js';
+
+export {
+  EXPERIMENT_SCHEMA,
+  createExperiment,
+  parseExperiment,
+  compareSnapshots,
+} from './experiment.js';
