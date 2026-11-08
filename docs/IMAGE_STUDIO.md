@@ -1,0 +1,35 @@
+# Image Studio
+
+Offline-first image workspace inside BabelCodec (Media tab).
+
+## Modes
+
+| Mode | Purpose |
+|------|---------|
+| **Create** | Canvas scene graph (rect, ellipse, text, line) → PNG / JPEG / WebP / SVG |
+| **Convert** | Import raster or HEIF → preview → export PNG / JPEG / WebP |
+| **Inspect** | Format, dimensions, SHA-256, HEIF box list; jump to Hex Inspector |
+| **Batch** | Multi-file queue with isolated failures; per-file download |
+
+## Formats
+
+**Import (browser decode):** PNG, JPEG, WebP, GIF, BMP when the browser can decode them.  
+**HEIC/HEIF:** structural inspection always; pixel decode only if a backend is registered via `setHeifDecoderBackend` (none bundled by default — see [HEIF_DECODER.md](./HEIF_DECODER.md)).
+
+**Export:** PNG (lossless), JPEG / WebP (lossy quality control). SVG only from **Create** vector scene — not from photographs.
+
+## Integration
+
+- Original `Uint8Array` shared with Hex Inspector via `onBytes`.
+- Clear resets shared bytes (`null`).
+- `onNavigate('inspector')` activates Hex Inspector from Convert/Inspect.
+
+## Limits
+
+- Default max file size: 8 MiB (`DEFAULT_MAX_BYTES`).
+- Batch queue max: 24 files; concurrency 2.
+- Object URLs revoked on replace/clear.
+
+## Mobile
+
+Mode chips scroll horizontally. Create/Convert stack to a single column under 900px. Previews use `object-fit: contain` and max-height relative to viewport.
