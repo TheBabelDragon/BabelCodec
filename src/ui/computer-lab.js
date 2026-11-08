@@ -167,7 +167,11 @@ export function createComputerLab(container, opts = {}) {
   workspace.append(regPanel, memPanel, busPanel, dbgPanel);
   container.append(inputPanel, ctrlPanel, hwPanel, workspace, auditPanel);
 
-  hardware = createHardwareView(hwRoot, { machine, getSnapshot: () => snapshotSha256Machine(machine) });
+  // hardware-view requires getMachine(); passing the machine object alone is not enough
+  hardware = createHardwareView(hwRoot, {
+    getMachine: () => machine,
+    onSelect: () => {},
+  });
 
   function stopAuto() { if (autoTimer != null) { clearInterval(autoTimer); autoTimer = null; } }
 
@@ -201,22 +205,23 @@ export function createComputerLab(container, opts = {}) {
 
   function renderBuses() {
     const st = arch.getState();
-    const buses = arch.listBuses().map((b) => `${b.id}=${b.hex}`).join('  ');
-    let digest = null;
-    try { if (st.state === MachineState.COMPLETE || st.state === 'COMPLETE') digest = machine.getDigestHex?.(); } catch { /* */ }
-    busOut.textContent = [`state=${st.state} cycle=${st.cycle} block=${st.blockIndex}/${st.totalBlocks} round=${st.round}`, buses, digest ? `digest=${digest}` : 'digest=\u2014'].join('\n');
-    if (digest) {
+    const dig = st.digest || machine.digestHex || '';
+    busOut.textContent = [
+      `T1=${st.buses?.T1 ?? '—'}  T2=${st.buses?.T2 ?? '—'}`,
+      `W=${st.buses?.W ?? '—'}  K=${st.buses?.K ?? '—'}`,
+      dig ? `digest ${dig}` : '',
+    ].filter(Boolean).join('\n');
+    if (dig && inputArea.value != null) {
       try {
-        const ref = sha256Hex(inputArea.value);
-        cmpOut.textContent = ref === digest ? '\u2713 Matches functional engine' : `\u2717 Mismatch functional=${ref}`;
-        cmpOut.className = ref === digest ? 'diag-ok' : 'diag-err';
+        const expected = sha256Hex(inputArea.value);
+        cmpOut.textContent = dig.toLowerCase() === expected.toLowerCase() ? 'digest matches functional SHA-256' : `functional=${expected}`;
       } catch { cmpOut.textContent = ''; }
-    } else cmpOut.textContent = '';
+    }
   }
 
   function renderDbg() {
-    const bps = scheduler.breakpoints || [];
-    const wps = scheduler.watchpoints || [];
+    const bps = scheduler.listBreakpoints?.() || [];
+    const wps = scheduler.listWatchpoints?.() || [];
     dbgOut.textContent = [
       `breakpoints: ${bps.length ? bps.map((b) => `${b.id} ${b.type}`).join('; ') : 'none'}`,
       `watchpoints: ${wps.length ? wps.map((w) => `${w.id} ${w.kind}:${w.target}`).join('; ') : 'none'}`,
@@ -232,7 +237,11 @@ export function createComputerLab(container, opts = {}) {
     histStatus.textContent = `history: ${(hs.index ?? 0) + 1}/${hs.length ?? 0}${hs.live ? ' (live)' : ''} · branches ${branchHist.listBranches().length}`;
     const audit = interaction.getAudit().slice(-5);
     auditOut.textContent = audit.length ? audit.map((e) => `${e.operation} ${e.componentId} ok=${e.validation.ok}`).join('\n') : 'No mutations yet';
-    if (hardware?.refresh) hardware.refresh();
+    try {
+      if (hardware?.refresh) hardware.refresh();
+    } catch (err) {
+      onDiagnostic(`Hardware view: ${err && err.message ? err.message : err}`, 'err');
+    }
   }
 
   function afterStep() {
@@ -270,61 +279,43 @@ export function createComputerLab(container, opts = {}) {
   });
   btnAuto.addEventListener('click', () => {
     stopAuto();
-    const ms = Number(speedSel.value);
-    if (!ms) return;
-    history.goLive?.(); machine.resume?.();
+    const ms = parseInt(speedSel.value, 10) || 0;
+    if (!ms) { onDiagnostic('Select a non-manual speed', 'info'); return; }
     autoTimer = setInterval(() => {
-      if (machine.paused || machine.state === MachineState.COMPLETE || machine.state === 'COMPLETE' || machine.state === MachineState.ERROR) {
-        stopAuto(); refresh(); return;
-      }
-      machine.clock(); afterStep();
+      if (machine.state === MachineState.COMPLETE || machine.state === 'COMPLETE' || machine.paused) { stopAuto(); refresh(); return; }
+      history.goLive?.(); machine.resume?.(); machine.clock(); afterStep();
     }, ms);
   });
   btnStopAuto.addEventListener('click', () => { stopAuto(); refresh(); });
   btnWriteReg.addEventListener('click', () => {
     const r = interaction.writeRegister(regSel.value, regVal.value);
-    onDiagnostic(r.ok ? `Wrote ${regSel.value}` : r.event.validation.message, r.ok ? 'ok' : 'err');
-    branchHist.record({ kind: 'mutation', op: 'register' });
+    onDiagnostic(r.ok ? `Wrote ${regSel.value}` : r.message, r.ok ? 'ok' : 'err');
     refresh();
   });
   btnWriteMem.addEventListener('click', () => {
-    const r = interaction.writeMemory(memSel.value, Number(memIdx.value), memVal.value);
-    onDiagnostic(r.ok ? `Wrote ${memSel.value}[${memIdx.value}]` : r.event.validation.message, r.ok ? 'ok' : 'err');
-    branchHist.record({ kind: 'mutation', op: 'memory' });
+    const r = interaction.writeMemory(memSel.value, parseInt(memIdx.value, 10) || 0, memVal.value);
+    onDiagnostic(r.ok ? `Wrote ${memSel.value}[${memIdx.value}]` : r.message, r.ok ? 'ok' : 'err');
     refresh();
   });
-  memSel.addEventListener('change', () => { memPage = 0; renderMemory(); });
-  btnMemPrev.addEventListener('click', () => { if (memPage > 0) { memPage -= 1; renderMemory(); } });
-  btnMemNext.addEventListener('click', () => { memPage += 1; renderMemory(); });
+  btnMemPrev.addEventListener('click', () => { memPage = Math.max(0, memPage - 1); refresh(); });
+  btnMemNext.addEventListener('click', () => { memPage += 1; refresh(); });
+  memSel.addEventListener('change', () => { memPage = 0; refresh(); });
   btnBp.addEventListener('click', () => {
-    const id = scheduler.addBreakpoint({ type: 'cycle', params: { cycle: Number(bpCycle.value) } });
-    onDiagnostic(`BP ${id} @ cycle ${bpCycle.value}`, 'ok');
-    renderDbg();
+    scheduler.addBreakpoint?.({ type: 'cycle', cycle: parseInt(bpCycle.value, 10) || 0 });
+    refresh();
   });
   btnWpA.addEventListener('click', () => {
-    const id = scheduler.addWatchpoint({ kind: 'register', target: 'A' });
-    onDiagnostic(`Watch ${id} on A`, 'ok');
-    renderDbg();
+    scheduler.addWatchpoint?.({ kind: 'register', target: 'A' });
+    refresh();
   });
-  btnSchedRun.addEventListener('click', () => { history.goLive?.(); machine.resume?.(); scheduler.run({ maxCycles: 100000 }); });
-  btnSchedStop.addEventListener('click', () => { scheduler.stop('ui'); refresh(); });
+  btnSchedRun.addEventListener('click', () => { scheduler.run?.(); refresh(); });
+  btnSchedStop.addEventListener('click', () => { scheduler.stop?.('user'); refresh(); });
   btnExport.addEventListener('click', () => {
-    const payload = {
-      version: '0.8.0',
-      architecture: arch.getMetadata().architectureId,
-      state: arch.getState(),
-      registers: arch.listRegisters(),
-      audit: interaction.getAudit(),
-      branches: branchHist.listBranches(),
-      snapshot: snapshotSha256Machine(machine),
-    };
-    const blob = new Blob([bigJson(payload)], { type: 'application/json' });
-    const a = document.createElement('a');
+    const blob = new Blob([bigJson({ audit: interaction.getAudit(), history: history.export?.() })], { type: 'application/json' });
+    const a = el('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'babelcodec-workbench-export.json';
+    a.download = 'computer-trace.json';
     a.click();
-    URL.revokeObjectURL(a.href);
-    onDiagnostic('Exported', 'ok');
   });
 
   function loadBytes(bytesOrText) {

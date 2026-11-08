@@ -83,66 +83,62 @@ function init() {
     els.input.value = '';
     els.output.value = '';
     currentBytes = null;
-    els.fileMeta.textContent = '';
-    $('#file-input').value = '';
     pushBytesToViews(null);
     setDiagnostics('Cleared.', 'info');
   });
   $('#btn-copy').addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(els.output.value);
-      setDiagnostics('Copied.', 'ok');
+      setDiagnostics('Copied output.', 'ok');
     } catch {
-      els.output.select();
-      document.execCommand('copy');
-      setDiagnostics('Copied.', 'ok');
+      setDiagnostics('Copy failed.', 'err');
     }
   });
   $('#btn-download').addEventListener('click', () => {
-    if (!currentBytes && !els.output.value) {
-      setDiagnostics('Nothing to download.', 'err');
-      return;
-    }
-    const blob = currentBytes
-      ? new Blob([currentBytes], { type: 'application/octet-stream' })
-      : new Blob([els.output.value], { type: 'text/plain;charset=utf-8' });
+    const blob = new Blob([els.output.value], { type: 'text/plain' });
     const a = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    a.href = url;
-    a.download = currentBytes ? 'babelcodec-output.bin' : 'babelcodec-output.txt';
+    a.href = URL.createObjectURL(blob);
+    a.download = 'babelcodec-output.txt';
     a.click();
-    URL.revokeObjectURL(url);
-    setDiagnostics(
-      currentBytes
-        ? `Downloaded ${currentBytes.length} byte(s).`
-        : 'Downloaded text output.',
-      'ok',
-    );
+    URL.revokeObjectURL(a.href);
   });
-  $('#btn-load').addEventListener('click', () => $('#file-input').click());
-  $('#file-input').addEventListener('change', onFileSelected);
+  $('#live-convert').addEventListener('change', () => {
+    if ($('#live-convert').checked) runConvert();
+  });
   els.input.addEventListener('input', () => {
     if ($('#live-convert').checked) runConvert();
   });
-  for (const el of [els.fromFormat, els.toFormat, els.textEncoding]) {
-    el.addEventListener('change', () => {
-      if ($('#live-convert').checked) runConvert();
-    });
-  }
-  document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      e.preventDefault();
-      runConvert();
+  els.fromFormat.addEventListener('change', () => {
+    if ($('#live-convert').checked) runConvert();
+  });
+  els.toFormat.addEventListener('change', () => {
+    if ($('#live-convert').checked) runConvert();
+  });
+  $('#btn-load').addEventListener('click', () => $('#file-input').click());
+  $('#file-input').addEventListener('change', async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > MAX_FILE_BYTES) {
+      setDiagnostics(`File exceeds ${MAX_FILE_BYTES} bytes`, 'err');
+      return;
     }
+    const buf = new Uint8Array(await f.arrayBuffer());
+    currentBytes = buf;
+    pushBytesToViews(buf);
+    els.input.value = BC.encodeHex(buf);
+    els.fromFormat.value = 'hex';
+    els.fileMeta.textContent = `${f.name} · ${buf.length} bytes`;
+    runConvert();
+    setDiagnostics(`Loaded ${f.name}`, 'ok');
+    e.target.value = '';
   });
 
   inspectorView = createInspectorView($('#hex-inspector-root'), {
-    onSelectionChange: (sel, slice) => {
-      if (structureView) structureView.setSelection(sel, slice);
-      const transferBtn = document.getElementById('btn-to-logic');
-      if (transferBtn) transferBtn.disabled = !(slice && slice.length);
-    },
     onDiagnostic: setDiagnostics,
+    onSelectionChange: () => {
+      const t = document.getElementById('btn-to-logic');
+      if (t) t.disabled = false;
+    },
   });
   structureView = createStructureView($('#structure-root'), {
     onDiagnostic: setDiagnostics,
@@ -254,6 +250,8 @@ function switchTab(name) {
   if (name === 'computer' && computerView) computerView.refresh();
   if (name === 'structure' && structureView) structureView.refresh();
   if (name === 'logic' && logicView) logicView.refresh();
+  if (name === 'cpu' && cpuView?.refresh) cpuView.refresh();
+  if (name === 'text' && textView?.refresh) textView.refresh();
 }
 
 function pushBytesToViews(bytes) {
@@ -270,116 +268,67 @@ function parseRawBytesInput(text) {
 }
 
 function runConvert() {
-  const from = els.fromFormat.value;
-  const to = els.toFormat.value;
-  const encoding = getTextEncoding();
-  const input = els.input.value;
   try {
-    let fromFmt = from;
-    let toFmt = to;
-    const opts = { encoding };
-    if (from === 'ascii') {
-      fromFmt = 'text';
-      opts.encoding = 'ascii';
+    const from = els.fromFormat.value;
+    const to = els.toFormat.value;
+    const enc = getTextEncoding();
+    let bytes;
+    if (from === 'text') {
+      bytes = enc === 'ascii' ? BC.encodeAscii(els.input.value) : BC.encodeUtf8(els.input.value);
+    } else if (from === 'bytes' || from === 'hex') {
+      bytes = BC.decodeHex(els.input.value);
+    } else if (from === 'binary') {
+      bytes = BC.decodeBinary(els.input.value);
+    } else if (from === 'base64') {
+      bytes = BC.decodeBase64(els.input.value);
+    } else if (from === 'decimal') {
+      bytes = BC.decodeDecimal(els.input.value);
+    } else if (from === 'octal') {
+      bytes = BC.decodeOctal(els.input.value);
+    } else if (from === 'ascii') {
+      bytes = BC.encodeAscii(els.input.value);
     } else if (from === 'utf8') {
-      fromFmt = 'text';
-      opts.encoding = 'utf8';
+      bytes = BC.encodeUtf8(els.input.value);
+    } else if (from === 'morse') {
+      bytes = BC.decodeMorse(els.input.value);
+    } else {
+      bytes = BC.decodeHex(els.input.value);
     }
-    if (to === 'ascii') {
-      toFmt = 'text';
-      opts.encoding = 'ascii';
+    currentBytes = bytes;
+    pushBytesToViews(bytes);
+    let out;
+    if (to === 'text') {
+      out = enc === 'ascii' ? BC.decodeAscii(bytes) : BC.decodeUtf8(bytes);
+    } else if (to === 'bytes' || to === 'hex') {
+      out = BC.encodeHex(bytes);
+    } else if (to === 'binary') {
+      out = BC.encodeBinary(bytes);
+    } else if (to === 'base64') {
+      out = BC.encodeBase64(bytes);
+    } else if (to === 'decimal') {
+      out = BC.encodeDecimal(bytes);
+    } else if (to === 'octal') {
+      out = BC.encodeOctal(bytes);
+    } else if (to === 'ascii') {
+      out = BC.decodeAscii(bytes);
     } else if (to === 'utf8') {
-      toFmt = 'text';
-      opts.encoding = 'utf8';
-    }
-
-    let result;
-    if (from === 'bytes') {
-      const bytes = parseRawBytesInput(input);
-      result = BC.convert(bytes, 'bytes', toFmt, opts);
+      out = BC.decodeUtf8(bytes);
+    } else if (to === 'morse') {
+      out = BC.encodeMorse(bytes);
     } else {
-      result = BC.convert(input, fromFmt, toFmt, opts);
+      out = BC.encodeHex(bytes);
     }
-    const out = result.output;
-    if (out instanceof Uint8Array) {
-      currentBytes = out;
-      els.output.value = BC.encodeHex(out, { separator: ' ' });
-      setDiagnostics(`OK \u00b7 ${out.length} byte(s) -> hex \u00b7 ${from} -> ${to}`, 'ok');
-      pushBytesToViews(out);
-    } else {
-      els.output.value = out;
-      try {
-        if (['hex', 'binary', 'base64', 'decimal', 'octal'].includes(to)) {
-          currentBytes = BC.convert(out, to, 'bytes').output;
-          pushBytesToViews(currentBytes);
-          setDiagnostics(`OK \u00b7 ${currentBytes.length} byte(s) \u00b7 ${from} -> ${to}`, 'ok');
-        } else if (['text', 'ascii', 'utf8'].includes(from)) {
-          currentBytes = BC.convert(input, 'text', 'bytes', {
-            encoding: opts.encoding,
-          }).output;
-          pushBytesToViews(currentBytes);
-          setDiagnostics(`OK \u00b7 ${currentBytes.length} byte(s) \u00b7 ${from} -> ${to}`, 'ok');
-        } else {
-          currentBytes = null;
-          pushBytesToViews(null);
-          setDiagnostics(`OK \u00b7 ${from} -> ${to}`, 'ok');
-        }
-      } catch {
-        currentBytes = null;
-        pushBytesToViews(null);
-        setDiagnostics(`OK \u00b7 ${from} -> ${to}`, 'ok');
-      }
-    }
+    els.output.value = out;
+    setDiagnostics(`Converted ${from} → ${to} (${bytes.length} bytes)`, 'ok');
   } catch (e) {
-    const code = e.code ? ` [${e.code}]` : '';
-    setDiagnostics(`Error${code}: ${e.message || e}`, 'err');
-    els.output.value = '';
+    setDiagnostics(String(e.message || e), 'err');
   }
 }
 
-async function onFileSelected(ev) {
-  const file = ev.target.files?.[0];
-  if (!file) return;
-  if (file.size > MAX_FILE_BYTES) {
-    setDiagnostics(
-      `File too large: ${file.size} bytes (limit ${MAX_FILE_BYTES}).`,
-      'err',
-    );
-    return;
-  }
-  try {
-    currentBytes = new Uint8Array(await file.arrayBuffer());
-    els.fileMeta.textContent = `${file.name} \u00b7 ${file.size} bytes`;
-    els.input.value = BC.encodeHex(currentBytes, { separator: ' ' });
-    els.fromFormat.value = 'hex';
-    els.toFormat.value = 'base64';
-    pushBytesToViews(currentBytes);
-    setDiagnostics(`Loaded ${file.name}: ${currentBytes.length} bytes.`, 'ok');
-    if ($('#live-convert').checked) runConvert();
-  } catch (e) {
-    setDiagnostics(`File read failed: ${e.message}`, 'err');
-  }
-}
-
-function esc(s) {
-  const amp = String.fromCharCode(38);
-  const entity = (name) => amp + name + ';';
-  return String(s)
-    .replace(/&/g, entity('amp'))
-    .replace(/</g, entity('lt'))
-    .replace(/>/g, entity('gt'))
-    .replace(/"/g, entity('quot'))
-    .replace(/'/g, entity('#39'));
-}
-
-function setDiagnostics(message, kind) {
-  const cls =
-    kind === 'ok' ? 'diag-ok' : kind === 'err' ? 'diag-err' : 'diag-info';
-  els.diagnostics.textContent = '';
-  const span = document.createElement('span');
-  span.className = cls;
-  span.textContent = message;
-  els.diagnostics.appendChild(span);
+function setDiagnostics(msg, level = 'info') {
+  if (!els.diagnostics) return;
+  els.diagnostics.textContent = msg || '';
+  els.diagnostics.className = 'diagnostics diag-' + (level === 'ok' ? 'ok' : level === 'err' ? 'err' : 'info');
 }
 
 if (document.readyState === 'loading') {
