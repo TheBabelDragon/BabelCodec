@@ -56,7 +56,10 @@ export function createTextLab(container, opts = {}) {
 
   const outPanel = el('section', { className: 'panel lab-panel' });
   outPanel.appendChild(el('div', { className: 'panel-title', textContent: 'Output' }));
-  const out = el('pre', { className: 'mono inspect-out', textContent: '—' });
+  const out = el('pre', {
+    className: 'mono inspect-out',
+    textContent: 'Ready. Enter text above and choose an operation (Canonicalize, Hebrew parse, Morse, Digest).',
+  });
   outPanel.appendChild(out);
 
   container.append(inputPanel, outPanel);
