@@ -1,10 +1,10 @@
 # BabelCodec
 
-**Offline-first encoding, decoding, Unicode text lab, Morse blocks, Boolean logic, and inspectable SHA-256 computer** for the [TheBabelDragon](https://github.com/TheBabelDragon) ecosystem.
+**Offline-first encoding, decoding, Unicode text lab, Morse blocks, Boolean logic, inspectable SHA-256 computer, and image generation workstation** for the [TheBabelDragon](https://github.com/TheBabelDragon) ecosystem.
 
 **Live:** https://thebabeldragon.github.io/BabelCodec/
 
-**Version:** 0.9.2
+**Version:** 0.9.3
 
 ## Features
 
@@ -19,9 +19,9 @@
 - **CPU Lab** — educational 32-bit Harvard CPU with assembler
 - **Text Lab** — Unicode canonical form, Hebrew inspection, Morse blocks
 - **Hardware observability** — live schematic, bit-level adder inspect, memory/bus explorers, rewind/replay
-- **Image Studio** — Create graphics, convert PNG/JPEG/WebP/GIF/BMP/HEIF, inspect, batch; HEIF structural + optional pixel backend
+- **Image Studio** — Create graphics, convert PNG/JPEG/WebP/GIF/BMP/HEIF, inspect, batch; **Generate** images via provider-independent pipeline (offline mock by default)
 - **Zero runtime dependencies** — browser-native APIs only (optional WASM HEIF backend is pluggable)
-- **Public JS API** — `babelcodec`, `babelcodec/logic`, `babelcodec/sha256`, `babelcodec/computer`, `babelcodec/text`, `babelcodec/morse`, `babelcodec/scripts`
+- **Public JS API** — `babelcodec`, `babelcodec/logic`, `babelcodec/sha256`, `babelcodec/computer`, `babelcodec/text`, `babelcodec/morse`, `babelcodec/scripts`, `babelcodec/media/generation`
 
 ## Quick start
 
@@ -29,7 +29,7 @@
 npx serve .
 ```
 
-Open **Text Lab** for Unicode/Hebrew/Morse, **Computer Lab** for SHA-256 hardware, or **CPU Lab** for assembly.
+Open **Media** → **Generate** for the image generation workstation (mock provider works offline). Open **Text Lab** for Unicode/Hebrew/Morse, **Computer Lab** for SHA-256 hardware, or **CPU Lab** for assembly.
 
 ## Consumer imports
 
@@ -38,13 +38,30 @@ import { sha256Hex, createSha256Machine } from 'babelcodec';
 import { toCanonical } from 'babelcodec/text';
 import { encodeMorseDetailed, textToMorseBlock } from 'babelcodec/morse';
 import { hebrewAdapter } from 'babelcodec/scripts';
+import {
+  ensureGenerationDefaults,
+  submitGeneration,
+  awaitJob,
+  registerProvider,
+} from 'babelcodec/media/generation';
 ```
+
+## Image generation
+
+Provider-independent pipeline with optional TPU assist:
+
+- Mock provider for offline / CI
+- Explicit TPU backend registration (never inferred from browser APIs)
+- Job lifecycle, provenance, Image Studio ingestion
+
+See [docs/IMAGE_GENERATION.md](docs/IMAGE_GENERATION.md), [docs/GENERATION_SECURITY.md](docs/GENERATION_SECURITY.md).
 
 ## Development
 
 ```bash
 npm test
 npm run test:text
+npm run test:media
 npm run build
 npm run validate
 ```
@@ -62,10 +79,14 @@ npm run validate
 - [Security](docs/SECURITY.md)
 - [HEIF / HEIC Decoder](docs/HEIF_DECODER.md)
 - [Image Studio](docs/IMAGE_STUDIO.md)
+- [Image Generation](docs/IMAGE_GENERATION.md)
+- [Generation Security](docs/GENERATION_SECURITY.md)
+- [TPU Backends](docs/TPU_BACKENDS.md)
+- [Generation Providers](docs/GENERATION_PROVIDERS.md)
 
 ## Security
 
-All computation is local. No network, no telemetry, no upload of messages. See [docs/SECURITY.md](docs/SECURITY.md).
+All core computation is local. No network, no telemetry, no upload of messages by default. Remote image providers are opt-in via explicit registration and must use a gateway you control — never embed API keys in the client. See [docs/SECURITY.md](docs/SECURITY.md) and [docs/GENERATION_SECURITY.md](docs/GENERATION_SECURITY.md).
 
 ## License
 
