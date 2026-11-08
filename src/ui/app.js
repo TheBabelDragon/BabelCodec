@@ -175,6 +175,9 @@ function init() {
         currentBytes = bytes;
         pushBytesToViews(bytes);
       },
+      onNavigate: (tab) => {
+        if (tab) switchTab(tab);
+      },
     });
   }
 
