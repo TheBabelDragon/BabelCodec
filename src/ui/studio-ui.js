@@ -1,6 +1,7 @@
 /**
- * Image Studio — Create · Convert · Inspect · Batch
+ * Image Studio — Create · Convert · Inspect · Batch · Generate
  * Extends Media Lab; offline Canvas/SVG; HEIF via existing structural decoder.
+ * Generation pipeline is optional and offline-first (mock provider by default).
  */
 
 import {
@@ -26,6 +27,7 @@ import {
   createBatchQueue,
   processQueue,
 } from '../media/studio/index.js';
+import { buildGeneratePanel } from './generation-ui.js';
 
 /**
  * @param {HTMLElement} root
@@ -36,15 +38,13 @@ export function createMediaLab(root, options = {}) {
   const onBytes = options.onBytes || (() => {});
   const onNavigate = options.onNavigate || (() => {});
 
-  /** @type {'create'|'convert'|'inspect'|'batch'} */
+  /** @type {'create'|'convert'|'inspect'|'batch'|'generate'} */
   let mode = 'convert';
   /** @type {Uint8Array|null} */
   let sourceBytes = null;
   let sourceName = '';
   /** @type {string|null} */
   let previewUrl = null;
-  /** @type {AbortController|null} */
-  let activeAbort = null;
   let loadGen = 0;
   /** @type {ReturnType<typeof createScene>} */
   let scene = createScene(800, 600, '#1c2029');
@@ -53,11 +53,11 @@ export function createMediaLab(root, options = {}) {
   const batch = createBatchQueue(24);
   /** @type {HTMLCanvasElement|null} */
   let createCanvas = null;
+  let generateApi = null;
 
   root.textContent = '';
   root.classList.add('media-lab', 'image-studio');
 
-  // —— shell ——
   const shell = el('div', 'studio-shell');
   const modeNav = el('div', 'studio-mode-nav');
   const modes = [
@@ -65,6 +65,7 @@ export function createMediaLab(root, options = {}) {
     ['convert', 'Convert'],
     ['inspect', 'Inspect'],
     ['batch', 'Batch'],
+    ['generate', 'Generate'],
   ];
   const modeBtns = {};
   for (const [id, label] of modes) {
@@ -80,22 +81,37 @@ export function createMediaLab(root, options = {}) {
     convert: el('div', 'studio-panel studio-panel-convert'),
     inspect: el('div', 'studio-panel studio-panel-inspect'),
     batch: el('div', 'studio-panel studio-panel-batch'),
+    generate: el('div', 'studio-panel studio-panel-generate'),
   };
 
   const statusBar = el('div', 'media-status');
   statusBar.setAttribute('role', 'status');
   statusBar.textContent = 'Image Studio ready.';
 
-  shell.append(modeNav, panels.create, panels.convert, panels.inspect, panels.batch, statusBar);
+  shell.append(
+    modeNav,
+    panels.create,
+    panels.convert,
+    panels.inspect,
+    panels.batch,
+    panels.generate,
+    statusBar
+  );
   root.appendChild(shell);
 
   buildCreate(panels.create);
   buildConvert(panels.convert);
   buildInspect(panels.inspect);
   buildBatch(panels.batch);
+  generateApi = buildGeneratePanel(panels.generate, {
+    el,
+    btn,
+    setStatus,
+    notifyBytes,
+    onNavigate,
+  });
   setMode('convert');
 
-  // —— helpers ——
   function el(tag, cls) {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -119,6 +135,7 @@ export function createMediaLab(root, options = {}) {
     }
     if (id === 'create') redrawCreate();
     if (id === 'inspect') refreshInspect();
+    if (id === 'generate' && generateApi?.refresh) generateApi.refresh();
   }
 
   function revokePreview() {
@@ -133,12 +150,15 @@ export function createMediaLab(root, options = {}) {
     onBytes(bytes);
   }
 
-  // —— Create ——
   let wInput, hInput, bgInput, objList;
   function buildCreate(panel) {
     const toolbar = el('div', 'studio-toolbar');
     const presets = el('div', 'studio-presets');
-    for (const [name, [w, h]] of Object.entries(CANVAS_PRESETS || { '800×600': [800, 600], '1080p': [1920, 1080] })) {
+    const presetEntries = Array.isArray(CANVAS_PRESETS)
+      ? CANVAS_PRESETS.map((p) => [p.label, [p.w, p.h]])
+      : Object.entries(CANVAS_PRESETS || { '800×600': [800, 600] });
+    for (const [name, dims] of presetEntries) {
+      const [w, h] = dims;
       const b = btn(name, 'studio-chip');
       b.addEventListener('click', () => {
         wInput.value = String(w);
@@ -258,7 +278,6 @@ export function createMediaLab(root, options = {}) {
     }
   }
 
-  // —— Convert ——
   let convertPreview, convertInfo, qualityInput, formatSelect;
   function buildConvert(panel) {
     const drop = el('div', 'studio-dropzone');
@@ -412,7 +431,6 @@ export function createMediaLab(root, options = {}) {
     return 'png';
   }
 
-  // —— Inspect ——
   let inspectMeta, inspectBoxes;
   function buildInspect(panel) {
     const jump = btn('Open bytes in Hex Inspector', 'studio-btn');
@@ -423,7 +441,7 @@ export function createMediaLab(root, options = {}) {
   }
   function refreshInspect() {
     if (!sourceBytes) {
-      inspectMeta.textContent = 'No file loaded. Use Convert or Batch.';
+      inspectMeta.textContent = 'No file loaded. Use Convert, Batch, or Generate.';
       inspectBoxes.textContent = '';
       return;
     }
@@ -442,7 +460,6 @@ export function createMediaLab(root, options = {}) {
     }
   }
 
-  // —— Batch ——
   let batchListEl, batchFormat, batchQuality;
   function buildBatch(panel) {
     const drop = el('div', 'studio-dropzone');
