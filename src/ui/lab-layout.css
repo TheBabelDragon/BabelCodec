@@ -1,4 +1,35 @@
-/* Lab layout repair — additive overrides for Computer / CPU / Text labs */
+/**
+ * Lab layout repair — additive overrides for Computer / CPU / Text / SHA-256 labs.
+ *
+ * Root cause of overlays: converter `.panel { min-height: 0 }` + flex shrink collapses
+ * lab sections to title-bar height while children still paint, so later panels stack on
+ * top of earlier content. Lab roots also used overflow:hidden without an internal scroll.
+ */
+
+/* View panels that host labs must allow the lab column to scroll */
+#view-computer,
+#view-cpu,
+#view-text,
+#view-sha256,
+#view-media {
+  overflow: hidden;
+}
+
+#view-computer > .computer-root,
+#view-cpu > .cpu-root,
+#view-text > .text-root,
+#view-sha256 > .sha256-root,
+#view-media > .media-root {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .sha256-lab,
 .computer-lab,
 .cpu-lab,
@@ -6,37 +37,72 @@
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
-  padding: 0.75rem 1rem 1.25rem;
+  padding: 0.75rem 1rem 1.5rem;
   max-width: 1100px;
   width: 100%;
   box-sizing: border-box;
-  overflow: auto;
-  flex: 1;
-  min-height: 0;
+  /* Lab itself is the content; parent root scrolls */
+  overflow: visible;
+  flex: 0 0 auto;
+  min-height: min-content;
   min-width: 0;
+  height: auto;
 }
 
-.computer-root,
-.cpu-root,
-.text-root,
-.sha256-root {
+/*
+ * Critical: defeat converter `.panel { min-height: 0; display:flex }` collapse.
+ * Lab panels must size to their content and must not shrink below it.
+ */
+.sha256-lab > .panel,
+.sha256-lab > .lab-panel,
+.computer-lab > .panel,
+.computer-lab > .lab-panel,
+.cpu-lab > .panel,
+.cpu-lab > .lab-panel,
+.text-lab > .panel,
+.text-lab > .lab-panel,
+.computer-lab .workbench-grid > .panel,
+.computer-lab .workbench-grid > .lab-panel {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  width: 100%;
-  overflow: hidden;
+  flex: 0 0 auto;
+  min-height: min-content;
+  height: auto;
+  overflow: visible;
+  border-right: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  background: var(--bg-panel, var(--bg));
+  padding: 0.65rem 0.85rem;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 0;
 }
 
-.lab-panel {
-  min-width: 0;
-  box-sizing: border-box;
+.sha256-lab .panel-title,
+.computer-lab .panel-title,
+.cpu-lab .panel-title,
+.text-lab .panel-title {
+  flex: 0 0 auto;
+  margin-bottom: 0.4rem;
+}
+
+.sha256-lab .btn-row,
+.computer-lab .btn-row,
+.cpu-lab .btn-row,
+.text-lab .btn-row {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-height: auto;
 }
 
 .inspect-out {
   word-break: break-word;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .sha256-lab textarea,
@@ -46,6 +112,8 @@
   width: 100%;
   box-sizing: border-box;
   min-height: 4rem;
+  flex: 0 0 auto;
+  resize: vertical;
 }
 
 .workbench-grid {
@@ -54,6 +122,8 @@
   gap: 0.75rem;
   align-items: start;
   min-width: 0;
+  width: 100%;
+  flex: 0 0 auto;
 }
 
 .reg-grid {
@@ -61,6 +131,7 @@
   grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
   gap: 0.35rem;
   margin-bottom: 0.5rem;
+  flex: 0 0 auto;
 }
 
 .reg-grid .reg-cell,
@@ -87,26 +158,39 @@
   color: var(--text);
 }
 
-.hardware-view {
-  margin-top: 0.5rem;
+/* Hardware schematic region — own block, no absolute stacking */
+.computer-lab .hw-host,
+.computer-lab .hardware-view {
+  position: relative;
+  margin-top: 0.25rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
   min-width: 0;
+  width: 100%;
+  flex: 0 0 auto;
+  overflow: visible;
 }
 
 .hw-layout {
+  display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.85fr);
+  gap: 0.75rem;
   min-width: 0;
+  align-items: start;
 }
 
 .hw-schematic-wrap {
   min-width: 0;
   max-width: 100%;
+  overflow: auto;
 }
 
 .hw-svg {
+  display: block;
   width: 100%;
+  max-width: 100%;
+  height: auto;
 }
 
 .hw-detail,
@@ -114,6 +198,12 @@
 .hw-arith {
   min-width: 0;
   max-width: 100%;
+}
+
+/* State badge / controls that must not collapse */
+.computer-lab .state-badge,
+.cpu-lab .state-badge {
+  flex: 0 0 auto;
 }
 
 @media (max-width: 800px) {
@@ -133,7 +223,11 @@
     padding: 0.55rem 0.65rem 1rem;
     gap: 0.65rem;
   }
-  .lab-panel {
+  .sha256-lab > .panel,
+  .computer-lab > .panel,
+  .cpu-lab > .panel,
+  .text-lab > .panel,
+  .computer-lab .workbench-grid > .panel {
     padding: 0.55rem 0.65rem;
   }
   .btn-row .btn,
