@@ -95,55 +95,103 @@ const required = [
   'docs/HARDWARE_INSPECTION.md',
 ];
 
-async function mustExist(rel) {
+let failed = false;
+
+for (const rel of required) {
   const abs = path.join(root, rel);
-  await access(abs, constants.R_OK);
-  console.log('  OK ', rel);
+  try {
+    await access(abs, constants.R_OK);
+    console.log(`  OK  ${rel}`);
+  } catch {
+    console.error(`  MISSING  ${rel}`);
+    failed = true;
+  }
 }
 
-async function main() {
-  for (const rel of required) {
-    await mustExist(rel);
+try {
+  const mod = await import(pathToFileURL(path.join(root, 'src/core/index.js')).href);
+  const codecs = mod.listCodecs();
+  console.log(`  OK  core loaded · codecs: ${codecs.join(', ')}`);
+  if (codecs.length < 8) {
+    console.error('  FAIL  expected at least 8 codecs');
+    failed = true;
   }
+} catch (e) {
+  console.error('  FAIL  core import:', e.message);
+  failed = true;
+}
 
-  const core = await import(pathToFileURL(path.join(root, 'src/core/index.js')).href);
-  const names = core.listCodecs?.() || Object.keys(core.codecs || {});
-  console.log('  OK  core loaded · codecs:', Array.isArray(names) ? names.join(', ') : names);
-
+try {
   const logic = await import(pathToFileURL(path.join(root, 'src/logic/index.js')).href);
-  if (!logic.and || !logic.or) throw new Error('logic engine missing gates');
-  console.log('  OK  logic engine loaded');
-
-  const sha = await import(pathToFileURL(path.join(root, 'src/sha256/index.js')).href);
-  const empty = sha.sha256Hex('');
-  if (empty !== 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855') {
-    throw new Error('sha256 empty vector mismatch');
+  for (const n of ['and', 'xor', 'diffBytes', 'evaluateCircuit']) {
+    if (typeof logic[n] !== 'function') {
+      console.error(`  FAIL  logic missing ${n}`);
+      failed = true;
+    }
   }
-  console.log('  OK  sha256 functional engine (empty vector)');
+  console.log('  OK  logic engine loaded');
+} catch (e) {
+  console.error('  FAIL  logic import:', e.message);
+  failed = true;
+}
 
+try {
+  const sha = await import(pathToFileURL(path.join(root, 'src/sha256/index.js')).href);
+  const hex = sha.sha256Hex('');
+  if (hex !== 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855') {
+    console.error('  FAIL  sha256 empty vector mismatch');
+    failed = true;
+  } else {
+    console.log('  OK  sha256 functional engine (empty vector)');
+  }
+} catch (e) {
+  console.error('  FAIL  sha256 import:', e.message);
+  failed = true;
+}
+
+try {
   const computer = await import(pathToFileURL(path.join(root, 'src/computer/index.js')).href);
   const m = computer.createSha256Machine();
   m.loadMessage('abc');
   m.runUntilComplete();
-  const dig = (m.digestHex || '').toLowerCase();
-  if (dig !== 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad') {
-    throw new Error('computer abc vector mismatch: ' + dig);
+  const d = m.getDigestHex();
+  if (d !== 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad') {
+    console.error('  FAIL  computer abc vector mismatch', d);
+    failed = true;
+  } else {
+    console.log('  OK  gate-level SHA-256 computer (abc vector)');
   }
-  console.log('  OK  gate-level SHA-256 computer (abc vector)');
+} catch (e) {
+  console.error('  FAIL  computer import/run:', e.message);
+  failed = true;
+}
 
+try {
   const insp = await import(pathToFileURL(path.join(root, 'src/computer/inspection/index.js')).href);
-  if (typeof insp.snapshotSha256Machine !== 'function') throw new Error('inspection snapshot missing');
-  console.log('  OK  inspection surface');
+  if (typeof insp.snapshotSha256Machine !== 'function') {
+    console.error('  FAIL  inspection snapshot missing');
+    failed = true;
+  } else {
+    console.log('  OK  inspection surface');
+  }
+} catch (e) {
+  console.error('  FAIL  inspection import:', e.message);
+  failed = true;
+}
 
+try {
   const api = await import(pathToFileURL(path.join(root, 'src/api/babelcodec.js')).href);
   const ver = api.version || api.VERSION || api.default?.version;
   console.log('  OK  api version', ver || EXPECTED_VERSION);
   console.log('  OK  public API sha256 + computer surface');
-
-  console.log('\nBuild verification passed (static assets, core, logic, sha256, computer, inspection).');
+} catch (e) {
+  console.error('  FAIL  api import:', e.message);
+  failed = true;
 }
 
-main().catch((e) => {
-  console.error('Build failed:', e);
+if (failed) {
+  console.error('\nBuild verification FAILED.');
   process.exit(1);
-});
+}
+
+console.log('\nBuild verification passed (static assets, core, logic, sha256, computer, inspection).');
