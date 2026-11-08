@@ -19,7 +19,7 @@
     "./media/studio": "./src/media/studio/index.js"
   },
   "scripts": {
-    "test": "node --test tests/**/*.test.js tests/logic/**/*.test.js tests/sha256/**/*.test.js tests/computer/**/*.test.js tests/cpu/**/*.test.js tests/text/**/*.test.js tests/scripts/**/*.test.js tests/morse/**/*.test.js tests/digest/**/*.test.js tests/computer/architecture/**/*.test.js tests/media/**/*.test.js",
+    "test": "node --test tests/**/*.test.js tests/logic/**/*.test.js tests/sha256/**/*.test.js tests/computer/**/*.test.js tests/cpu/**/*.test.js tests/text/**/*.test.js tests/scripts/**/*.test.js tests/morse/**/*.test.js tests/digest/**/*.test.js tests/computer/architecture/**/*.test.js tests/media/**/*.test.js tests/ui/**/*.test.js",
     "test:core": "node --test tests/core.test.js",
     "test:logic": "node --test tests/logic/**/*.test.js",
     "test:sha256": "node --test tests/sha256/**/*.test.js",
@@ -27,6 +27,7 @@
     "test:cpu": "node --test tests/cpu/**/*.test.js",
     "test:text": "node --test tests/text/**/*.test.js tests/scripts/**/*.test.js tests/morse/**/*.test.js tests/digest/**/*.test.js",
     "test:media": "node --test tests/media/**/*.test.js",
+    "test:ui": "node --test tests/ui/**/*.test.js",
     "build": "node scripts/build.js",
     "validate": "npm test && npm run build"
   },
