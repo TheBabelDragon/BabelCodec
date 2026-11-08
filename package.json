@@ -1,7 +1,7 @@
 {
   "name": "babelcodec",
-  "version": "0.9.2",
-  "description": "Universal encoding, Unicode text, Morse, Boolean logic, interactive SHA-256 computer and educational CPU — offline-first",
+  "version": "0.9.3",
+  "description": "Universal encoding, Unicode text, Morse, Boolean logic, interactive SHA-256 computer, educational CPU, and image generation workstation — offline-first",
   "type": "module",
   "main": "src/api/babelcodec.js",
   "exports": {
@@ -16,7 +16,8 @@
     "./morse": "./src/codecs/morse/index.js",
     "./media": "./src/media/heif/index.js",
     "./media/image": "./src/media/image/index.js",
-    "./media/studio": "./src/media/studio/index.js"
+    "./media/studio": "./src/media/studio/index.js",
+    "./media/generation": "./src/media/generation/index.js"
   },
   "scripts": {
     "test": "node --test tests/**/*.test.js tests/logic/**/*.test.js tests/sha256/**/*.test.js tests/computer/**/*.test.js tests/cpu/**/*.test.js tests/text/**/*.test.js tests/scripts/**/*.test.js tests/morse/**/*.test.js tests/digest/**/*.test.js tests/computer/architecture/**/*.test.js tests/media/**/*.test.js tests/ui/**/*.test.js",
@@ -31,6 +32,6 @@
     "build": "node scripts/build.js",
     "validate": "npm test && npm run build"
   },
-  "keywords": ["encoding", "unicode", "morse", "sha256", "cpu", "workbench", "offline", "heif", "heic", "image"],
+  "keywords": ["encoding", "unicode", "morse", "sha256", "cpu", "workbench", "offline", "heif", "heic", "image", "generation"],
   "license": "MIT"
 }
