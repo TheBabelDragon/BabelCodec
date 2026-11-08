@@ -11,7 +11,7 @@ import {
 import {
   detectImageFormat,
   inspectImageBytes,
-  canMime,
+  canEncodeMime,
   canvasToBlob,
   exportFilename,
 } from '../media/image/index.js';
@@ -415,10 +415,10 @@ export function createMediaLab(root, options = {}) {
   // —— Inspect ——
   let inspectMeta, inspectBoxes;
   function buildInspect(panel) {
-    inspectMeta = el('pre', 'studio-inspect-meta');
-    inspectBoxes = el('pre', 'studio-inspect-boxes');
     const jump = btn('Open bytes in Hex Inspector', 'studio-btn');
     jump.addEventListener('click', () => onNavigate('inspector'));
+    inspectMeta = el('pre', 'studio-inspect-meta');
+    inspectBoxes = el('pre', 'studio-inspect-boxes');
     panel.append(inspectMeta, inspectBoxes, jump);
   }
   function refreshInspect() {
