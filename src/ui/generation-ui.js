@@ -15,6 +15,7 @@ import {
   listProviderIds,
   JOB_STATES,
 } from '../media/generation/index.js';
+import { exportSstvHandoff } from '../media/integrations/index.js';
 
 /**
  * Build the Generate panel into `panel`.
@@ -177,9 +178,12 @@ export function buildGeneratePanel(panel, ctx) {
   const galleryActions = el('div', 'gen-gallery-actions');
   const sendBtn = btn('Send to Image Studio', 'studio-btn');
   const downloadBtn = btn('Download', 'studio-btn');
+  const sstvBtn = btn('Export SSTV handoff', 'studio-btn');
   sendBtn.disabled = true;
   downloadBtn.disabled = true;
-  galleryActions.append(sendBtn, downloadBtn);
+  sstvBtn.disabled = true;
+  sstvBtn.title = 'Download PNG + Signal Processor contract v1 JSON (file-based handoff)';
+  galleryActions.append(sendBtn, downloadBtn, sstvBtn);
 
   previewCol.append(previewFrame, gallery, galleryActions);
 
@@ -300,6 +304,8 @@ export function buildGeneratePanel(panel, ctx) {
 
   /** @type {Uint8Array|null} */
   let lastBytes = null;
+  /** @type {{ width?: number, height?: number }} */
+  let lastMeta = {};
 
   function showResults(results) {
     revokeGallery();
@@ -316,15 +322,25 @@ export function buildGeneratePanel(panel, ctx) {
       thumb.addEventListener('click', () => {
         previewImg.src = url;
         lastBytes = bytes;
+        lastMeta = {
+          width: r.asset.width || parseInt(wInput.value, 10),
+          height: r.asset.height || parseInt(hInput.value, 10),
+        };
         sendBtn.disabled = false;
         downloadBtn.disabled = false;
+        sstvBtn.disabled = false;
       });
       gallery.appendChild(thumb);
       if (first) {
         previewImg.src = url;
         lastBytes = bytes;
+        lastMeta = {
+          width: r.asset.width || parseInt(wInput.value, 10),
+          height: r.asset.height || parseInt(hInput.value, 10),
+        };
         sendBtn.disabled = false;
         downloadBtn.disabled = false;
+        sstvBtn.disabled = false;
         first = false;
       }
     }
@@ -348,6 +364,24 @@ export function buildGeneratePanel(panel, ctx) {
     a.href = previewImg.src;
     a.download = 'babelcodec-generated.png';
     a.click();
+  });
+
+  sstvBtn.addEventListener('click', async () => {
+    if (!lastBytes) return;
+    try {
+      sstvBtn.disabled = true;
+      await exportSstvHandoff(lastBytes, {
+        width: lastMeta.width,
+        height: lastMeta.height,
+        mode: 'martin_m1',
+        filename: 'babelcodec-sstv-source.png',
+      });
+      setStatus('Exported SSTV handoff (PNG + .job.json) — import in Signal Processor');
+    } catch (e) {
+      setStatus('SSTV handoff failed: ' + (e.message || e));
+    } finally {
+      sstvBtn.disabled = !lastBytes;
+    }
   });
 
   function setProgress(p, state) {

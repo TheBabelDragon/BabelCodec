@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://thebabeldragon.github.io/BabelCodec/schemas/media/signal-processor-job.v1.schema.json",
+  "title": "BabelCodec ↔ Signal Processor media job manifest",
+  "description": "Versioned, file-based handoff between BabelCodec Image Studio and Signal Processor SSTV. Independent of either app's internal object model.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "job_id", "created_at", "source_application", "operation", "asset"],
+  "properties": {
+    "contract_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "job_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "created_at": {
+      "type": "string",
+      "description": "ISO-8601 timestamp"
+    },
+    "source_application": {
+      "type": "string",
+      "enum": ["BabelCodec", "signal-processor"]
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "image_to_sstv",
+        "sstv_to_image",
+        "image_handoff",
+        "audio_handoff",
+        "reconstructed_image"
+      ]
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filename", "mime_type"],
+      "properties": {
+        "filename": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "mime_type": {
+          "type": "string",
+          "enum": [
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "audio/wav",
+            "audio/wave",
+            "application/json"
+          ]
+        },
+        "width": { "type": "integer", "minimum": 1, "maximum": 8192 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 8192 },
+        "byte_length": { "type": "integer", "minimum": 0 },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "format": {
+      "type": "string",
+      "description": "Optional human label for the payload format"
+    },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "width": { "type": "integer", "minimum": 1, "maximum": 8192 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 8192 }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "algorithm": { "type": "string", "const": "sha-256" }
+      }
+    },
+    "sstv": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["martin_m1", "robot36", "unknown"]
+        },
+        "vis_code": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "sample_rate_hz": { "type": "integer", "enum": [44100, 48000] },
+        "duration_ms": { "type": "number", "minimum": 0 },
+        "line_count": { "type": "integer", "minimum": 0 },
+        "decoded_lines": { "type": "integer", "minimum": 0 },
+        "sync_score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "incomplete": { "type": "boolean" }
+      }
+    },
+    "audio": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sample_rate": { "type": "integer", "enum": [44100, 48000] },
+        "channels": { "type": "integer", "const": 1 },
+        "encoding": { "type": "string", "enum": ["pcm_s16le"] },
+        "sample_count": { "type": "integer", "minimum": 0 },
+        "duration_ms": { "type": "number", "minimum": 0 }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "provider_id": { "type": "string" },
+        "model_id": { "type": "string" },
+        "prompt_ref": { "type": "string" },
+        "source_job_id": { "type": "string" },
+        "notes": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Optional decode/encode metrics; consumers may ignore unknown keys"
+    }
+  }
+}
