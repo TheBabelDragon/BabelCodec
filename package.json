@@ -1,7 +1,7 @@
 {
   "name": "babelcodec",
-  "version": "0.9.3",
-  "description": "Universal encoding, Unicode text, Morse, Boolean logic, interactive SHA-256 computer, educational CPU, and image generation workstation — offline-first",
+  "version": "0.10.0",
+  "description": "Universal encoding, Unicode text (Rust WASM core), Morse, Boolean logic, interactive SHA-256 computer, educational CPU, and image generation workstation — offline-first",
   "type": "module",
   "main": "src/api/babelcodec.js",
   "exports": {
@@ -29,9 +29,11 @@
     "test:text": "node --test tests/text/**/*.test.js tests/scripts/**/*.test.js tests/morse/**/*.test.js tests/digest/**/*.test.js",
     "test:media": "node --test tests/media/**/*.test.js",
     "test:ui": "node --test tests/ui/**/*.test.js",
+    "test:rust": "cd rust && cargo test -p unicode-core",
+    "build:wasm": "cd rust && cargo build --release --target wasm32-unknown-unknown -p unicode-core && wasm-bindgen --target web --out-dir ../pkg target/wasm32-unknown-unknown/release/unicode_core.wasm",
     "build": "node scripts/build.js",
     "validate": "npm test && npm run build"
   },
-  "keywords": ["encoding", "unicode", "morse", "sha256", "cpu", "workbench", "offline", "heif", "heic", "image", "generation"],
+  "keywords": ["encoding", "unicode", "wasm", "rust", "morse", "sha256", "cpu", "workbench", "offline", "heif", "heic", "image", "generation"],
   "license": "MIT"
 }

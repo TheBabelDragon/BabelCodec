@@ -2,7 +2,7 @@ name: Test and Deploy
 
 on:
   push:
-    branches: [main, feat/babelcodec-040-computational-workbench]
+    branches: [main, feat/rust-unicode-core-wasm]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -21,13 +21,44 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Run all tests
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt
+
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --locked
+
+      - name: Cargo fmt check
+        run: cd rust && cargo fmt --check
+
+      - name: Cargo test (native)
+        run: cd rust && cargo test -p unicode-core
+
+      - name: Build WASM package
+        run: |
+          cd rust
+          cargo build --release --target wasm32-unknown-unknown -p unicode-core
+          wasm-bindgen --target web --out-dir ../pkg \
+            target/wasm32-unknown-unknown/release/unicode_core.wasm
+
+      - name: Run all Node tests
         run: node --test tests/**/*.test.js tests/logic/**/*.test.js tests/sha256/**/*.test.js tests/computer/**/*.test.js tests/cpu/**/*.test.js tests/text/**/*.test.js tests/scripts/**/*.test.js tests/morse/**/*.test.js tests/digest/**/*.test.js tests/computer/architecture/**/*.test.js tests/media/**/*.test.js tests/ui/**/*.test.js
+
       - name: Build verification
         run: node scripts/build.js
+
+      - name: Upload pkg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unicode-core-wasm
+          path: pkg/
 
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -38,12 +69,30 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --locked
+
+      - name: Build WASM for Pages
+        run: |
+          cd rust
+          cargo build --release --target wasm32-unknown-unknown -p unicode-core
+          wasm-bindgen --target web --out-dir ../pkg \
+            target/wasm32-unknown-unknown/release/unicode_core.wasm
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: .
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
