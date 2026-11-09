@@ -1,6 +1,13 @@
 /**
- * Explicit Unicode normalization profiles. Default is NONE.
+ * Explicit Unicode normalization profiles.
+ * Canonical implementation is the Rust unicode-normalization crate.
+ * Default profile remains NONE — source is never silently overwritten.
  */
+
+import {
+  initializeUnicodeCore,
+  normalize as rustNormalize,
+} from './unicode-core-loader.js';
 
 export const NormalizationProfile = Object.freeze({
   NONE: 'NONE',
@@ -10,21 +17,21 @@ export const NormalizationProfile = Object.freeze({
   NFKD: 'NFKD',
 });
 
-export function applyNormalization(text, profile = NormalizationProfile.NONE) {
+export async function applyNormalization(text, profile = NormalizationProfile.NONE) {
   if (typeof text !== 'string') {
     return { text: '', profile, changed: false };
   }
   if (profile === NormalizationProfile.NONE || !profile) {
     return { text, profile: NormalizationProfile.NONE, changed: false };
   }
-  const form = profile;
-  if (!['NFC', 'NFD', 'NFKC', 'NFKD'].includes(form)) {
+  if (!['NFC', 'NFD', 'NFKC', 'NFKD'].includes(profile)) {
     return { text, profile: NormalizationProfile.NONE, changed: false };
   }
-  const normalized = text.normalize(form);
+  await initializeUnicodeCore();
+  const res = await rustNormalize(text, profile);
   return {
-    text: normalized,
-    profile: form,
-    changed: normalized !== text,
+    text: res.text,
+    profile: res.profile,
+    changed: !!res.changed,
   };
 }

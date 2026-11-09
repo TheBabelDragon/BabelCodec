@@ -1,29 +1,21 @@
 /**
- * Descriptive script detection over code points.
+ * Script detection — canonical path is the Rust unicode-script crate.
  */
 
-import { iterateCodePoints, scriptOfCodePoint } from './unicode.js';
+import {
+  initializeUnicodeCore,
+  detectScripts as rustDetectScripts,
+} from './unicode-core-loader.js';
 
-export function detectScripts(text) {
-  const counts = Object.create(null);
-  for (const { codePoint } of iterateCodePoints(text)) {
-    const s = scriptOfCodePoint(codePoint);
-    counts[s] = (counts[s] || 0) + 1;
+export async function detectScripts(text) {
+  if (typeof text !== 'string') {
+    return { primary: 'Unknown', scripts: {}, mixed: false };
   }
-  let primary = 'Unknown';
-  let max = 0;
-  for (const [name, n] of Object.entries(counts)) {
-    if (name === 'Common' || name === 'Unknown') continue;
-    if (n > max) {
-      max = n;
-      primary = name;
-    }
-  }
-  if (max === 0 && counts.Common) primary = 'Common';
-  const distinct = Object.keys(counts).filter((k) => k !== 'Common' && k !== 'Unknown');
+  await initializeUnicodeCore();
+  const res = await rustDetectScripts(text);
   return {
-    primary,
-    scripts: counts,
-    mixed: distinct.length > 1,
+    primary: res.primary || 'Unknown',
+    scripts: res.scripts || {},
+    mixed: !!res.mixed,
   };
 }

@@ -1,5 +1,6 @@
 /**
  * BabelCodec text foundation — package subpath: babelcodec/text
+ * Version 0.10.0 — Rust Unicode Core is the canonical authority.
  */
 
 export {
@@ -8,6 +9,10 @@ export {
   codePointToUPlus,
   scriptOfCodePoint,
   SCRIPT_RANGES,
+  initializeUnicodeCore,
+  isUnicodeCoreReady,
+  getUnicodeCore,
+  stringToUtf16Units,
 } from './unicode.js';
 
 export { segmentGraphemes } from './graphemes.js';
@@ -22,3 +27,10 @@ export {
   toCanonical,
   serializeCanonical,
 } from './canonical.js';
+
+export {
+  inspectCanonical,
+  normalize,
+  isXidIdentifier,
+  engineVersion,
+} from './unicode-core-loader.js';

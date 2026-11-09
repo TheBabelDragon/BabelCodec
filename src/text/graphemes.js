@@ -1,38 +1,44 @@
 /**
- * Grapheme segmentation via Intl.Segmenter when available.
+ * Grapheme segmentation — canonical path is the Rust Unicode Core (UAX #29).
+ * No silent code-point fallback presented as full grapheme segmentation.
  */
 
-export function segmentGraphemes(text) {
+import {
+  initializeUnicodeCore,
+  segmentGraphemes as rustSegmentGraphemes,
+  isUnicodeCoreReady,
+} from './unicode-core-loader.js';
+
+export async function segmentGraphemes(text) {
   if (typeof text !== 'string') {
-    return { graphemes: [], method: 'code-point-fallback', diagnostic: 'non-string input' };
+    return {
+      graphemes: [],
+      method: 'error',
+      diagnostic: 'non-string input',
+    };
   }
-  if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
-    try {
-      const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-      const graphemes = [];
-      for (const { segment, index } of seg.segment(text)) {
-        graphemes.push({
-          text: segment,
-          start: index,
-          end: index + segment.length,
-        });
-      }
-      return { graphemes, method: 'Intl.Segmenter', diagnostic: null };
-    } catch (e) {
-      // fall through
-    }
-  }
-  const graphemes = [];
-  let i = 0;
-  while (i < text.length) {
-    const cp = text.codePointAt(i);
-    const len = cp > 0xffff ? 2 : 1;
-    graphemes.push({ text: text.slice(i, i + len), start: i, end: i + len });
-    i += len;
-  }
+  await initializeUnicodeCore();
+  const raw = await rustSegmentGraphemes(text);
+  const graphemes = (raw || []).map((g) => ({
+    text: g.text,
+    start: g.start,
+    end: g.end,
+    codePoints: g.code_points || g.codePoints || [],
+  }));
   return {
     graphemes,
-    method: 'code-point-fallback',
-    diagnostic: 'Intl.Segmenter unavailable; code-point fallback used (not full UAX #29)',
+    method: 'unicode-segmentation (UAX #29 via Rust WASM)',
+    diagnostic: null,
   };
+}
+
+export function segmentGraphemesSync(text) {
+  if (!isUnicodeCoreReady()) {
+    throw new Error(
+      'Unicode Core not initialized. Await initializeUnicodeCore() before sync grapheme calls.'
+    );
+  }
+  throw new Error(
+    'segmentGraphemesSync is not supported after the Rust migration. Use await segmentGraphemes(text).'
+  );
 }
