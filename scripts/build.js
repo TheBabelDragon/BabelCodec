@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const EXPECTED_VERSION = '0.9.0';
+const EXPECTED_VERSION = '0.10.0';
 
 const required = [
   'index.html',
@@ -32,6 +32,7 @@ const required = [
   'src/media/heif/convert.js',
   'docs/HEIF_DECODER.md',
   'src/text/index.js',
+  'src/text/unicode-core-loader.js',
   'src/codecs/morse/index.js',
   'src/scripts/index.js',
   'src/digest/index.js',
@@ -89,6 +90,10 @@ const required = [
   'src/computer/datapath.js',
   'src/computer/controller.js',
   'src/computer/sha256-machine.js',
+  'rust/Cargo.toml',
+  'rust/unicode-core/Cargo.toml',
+  'rust/unicode-core/src/lib.rs',
+  'docs/UNICODE_FOUNDATION.md',
   'README.md',
   'docs/LOGIC_ENGINE.md',
   'docs/ECOSYSTEM_INTEGRATION.md',
@@ -106,6 +111,14 @@ for (const rel of required) {
     console.error(`  MISSING  ${rel}`);
     failed = true;
   }
+}
+
+// pkg/ is produced by build:wasm / CI — warn but do not fail local static check
+try {
+  await access(path.join(root, 'pkg', 'unicode_core.js'), constants.R_OK);
+  console.log('  OK  pkg/unicode_core.js (WASM present)');
+} catch {
+  console.log('  WARN  pkg/unicode_core.js missing — run npm run build:wasm or rely on CI');
 }
 
 try {
@@ -194,4 +207,4 @@ if (failed) {
   process.exit(1);
 }
 
-console.log('\nBuild verification passed (static assets, core, logic, sha256, computer, inspection).');
+console.log('\nBuild verification passed (static assets, core, logic, sha256, computer, inspection, rust sources).');
