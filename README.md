@@ -20,6 +20,7 @@
 - **Text Lab** — Unicode canonical form, Hebrew inspection, Morse blocks
 - **Hardware observability** — live schematic, bit-level adder inspect, memory/bus explorers, rewind/replay
 - **Image Studio** — Create graphics, convert PNG/JPEG/WebP/GIF/BMP/HEIF, inspect, batch; **Generate** images via provider-independent pipeline (offline mock by default)
+- **Signal Processor handoff** — Export PNG + versioned media-job manifest for SSTV encode in [signal-processor](https://github.com/TheBabelDragon/signal-processor)
 - **Zero runtime dependencies** — browser-native APIs only (optional WASM HEIF backend is pluggable)
 - **Public JS API** — `babelcodec`, `babelcodec/logic`, `babelcodec/sha256`, `babelcodec/computer`, `babelcodec/text`, `babelcodec/morse`, `babelcodec/scripts`, `babelcodec/media/generation`
 
@@ -29,7 +30,7 @@
 npx serve .
 ```
 
-Open **Media** → **Generate** for the image generation workstation (mock provider works offline). Open **Text Lab** for Unicode/Hebrew/Morse, **Computer Lab** for SHA-256 hardware, or **CPU Lab** for assembly.
+Open **Media** → **Generate** for the image generation workstation (mock provider works offline). After a successful generate, use **Export SSTV handoff** to download PNG + `.job.json` for Signal Processor. Open **Text Lab** for Unicode/Hebrew/Morse, **Computer Lab** for SHA-256 hardware, or **CPU Lab** for assembly.
 
 ## Consumer imports
 
@@ -44,6 +45,11 @@ import {
   awaitJob,
   registerProvider,
 } from 'babelcodec/media/generation';
+import {
+  createImageToSstvManifest,
+  exportSstvHandoff,
+  validateMediaJobManifest,
+} from './src/media/integrations/index.js';
 ```
 
 ## Image generation
@@ -55,6 +61,18 @@ Provider-independent pipeline with optional TPU assist:
 - Job lifecycle, provenance, Image Studio ingestion
 
 See [docs/IMAGE_GENERATION.md](docs/IMAGE_GENERATION.md), [docs/GENERATION_SECURITY.md](docs/GENERATION_SECURITY.md).
+
+## Signal Processor integration
+
+File-based contract only (`contract_version: 1`). No shared origin or runtime module dependency.
+
+1. Generate or import an image in BabelCodec
+2. **Export SSTV handoff** → PNG + `.job.json`
+3. In [Signal Processor](https://github.com/TheBabelDragon/signal-processor) SSTV panel: load image → encode Martin M1 or Robot 36 → WAV
+4. Decode Martin M1 WAV → reconstructed PNG → re-import to BabelCodec Inspect if desired
+
+Schema: [schemas/media/signal-processor-job.v1.schema.json](schemas/media/signal-processor-job.v1.schema.json)  
+Docs: [docs/integrations/SIGNAL_PROCESSOR.md](docs/integrations/SIGNAL_PROCESSOR.md)
 
 ## Development
 
@@ -83,6 +101,7 @@ npm run validate
 - [Generation Security](docs/GENERATION_SECURITY.md)
 - [TPU Backends](docs/TPU_BACKENDS.md)
 - [Generation Providers](docs/GENERATION_PROVIDERS.md)
+- [Signal Processor integration](docs/integrations/SIGNAL_PROCESSOR.md)
 
 ## Security
 
