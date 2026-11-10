@@ -2,7 +2,7 @@ name: Test and Deploy
 
 on:
   push:
-    branches: [main, fix/wasm-pkg-pages-deploy]
+    branches: [main, fix/commit-pkg-wasm-assets]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -13,8 +13,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -35,24 +35,15 @@ jobs:
       - name: Generate Cargo.lock
         run: cd rust && cargo generate-lockfile
 
-      - name: Cargo fmt
-        run: |
-          cd rust
-          cargo fmt --all
-          cargo fmt --all -- --check
-
-      - name: Cargo test (native)
-        continue-on-error: true
-        run: |
-          cd rust
-          cargo test -p unicode-core --lib -- --nocapture 2>&1 | tee /tmp/cargo-test.log
-          exit ${PIPESTATUS[0]}
+      - name: Cargo test
+        run: cd rust && cargo test -p unicode-core --lib -- --nocapture
 
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli --locked
 
-      - name: Build WASM package (required)
+      - name: Build WASM package
         run: |
+          set -e
           cd rust
           cargo build --release --target wasm32-unknown-unknown -p unicode-core
           wasm-bindgen --target web --out-dir ../pkg \
@@ -60,8 +51,10 @@ jobs:
           ls -la ../pkg/
           test -f ../pkg/unicode_core.js
           test -f ../pkg/unicode_core_bg.wasm
+          # Ensure JS refers to local wasm (wasm-bindgen default)
+          head -c 200 ../pkg/unicode_core.js || true
 
-      - name: Run all Node tests
+      - name: Run Node tests
         run: |
           node --test \
             tests/**/*.test.js \
@@ -110,12 +103,14 @@ jobs:
 
       - name: Build WASM into pkg/ for Pages
         run: |
+          set -e
           cd rust
           cargo build --release --target wasm32-unknown-unknown -p unicode-core
           wasm-bindgen --target web --out-dir ../pkg \
             target/wasm32-unknown-unknown/release/unicode_core.wasm
           test -f ../pkg/unicode_core.js
           test -f ../pkg/unicode_core_bg.wasm
+          ls -la ../pkg/
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
