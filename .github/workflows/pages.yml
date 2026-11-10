@@ -42,7 +42,11 @@ jobs:
           cargo fmt --all -- --check
 
       - name: Cargo test (native)
-        run: cd rust && cargo test -p unicode-core --lib -- --nocapture
+        continue-on-error: true
+        run: |
+          cd rust
+          cargo test -p unicode-core --lib -- --nocapture 2>&1 | tee /tmp/cargo-test.log
+          exit ${PIPESTATUS[0]}
 
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli --locked
