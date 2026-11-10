@@ -41,16 +41,8 @@ jobs:
           cargo fmt --all
           cargo fmt --all -- --check
 
-      - name: Cargo build (diagnose)
-        run: |
-          cd rust
-          cargo build -p unicode-core -v
-
       - name: Cargo test (native)
-        id: cargo_test
-        run: |
-          cd rust
-          cargo test -p unicode-core --lib -- --nocapture
+        run: cd rust && cargo test -p unicode-core --lib -- --nocapture
 
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli --locked
@@ -118,7 +110,6 @@ jobs:
           cargo build --release --target wasm32-unknown-unknown -p unicode-core
           wasm-bindgen --target web --out-dir ../pkg \
             target/wasm32-unknown-unknown/release/unicode_core.wasm
-          ls -la ../pkg/
           test -f ../pkg/unicode_core.js
           test -f ../pkg/unicode_core_bg.wasm
 
