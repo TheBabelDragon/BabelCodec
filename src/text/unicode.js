@@ -1,6 +1,14 @@
 /**
- * Unicode scalar inspection — preserves source, iterates code points.
+ * Unicode scalar inspection — backed by the Rust Unicode Core when available.
+ * SCRIPT_RANGES retained only for offline diagnostics; not the canonical path.
  */
+
+import {
+  initializeUnicodeCore,
+  isUnicodeCoreReady,
+  getUnicodeCore,
+  stringToUtf16Units,
+} from './unicode-core-loader.js';
 
 export function codePointToUPlus(cp) {
   return `U+${cp.toString(16).toUpperCase().padStart(4, '0')}`;
@@ -28,6 +36,7 @@ export function codePointsUPlus(text) {
   return iterateCodePoints(text).map((c) => codePointToUPlus(c.codePoint));
 }
 
+/** @deprecated Not used for canonical classification once Rust core is ready. */
 export const SCRIPT_RANGES = Object.freeze([
   { name: 'Latin', ranges: [[0x0041, 0x024f], [0x1e00, 0x1eff]] },
   { name: 'Hebrew', ranges: [[0x0590, 0x05ff], [0xfb1d, 0xfb4f]] },
@@ -43,6 +52,7 @@ export const SCRIPT_RANGES = Object.freeze([
   { name: 'Common', ranges: [[0x0000, 0x007f], [0x2000, 0x206f]] },
 ]);
 
+/** @deprecated Prefer Rust Script property. */
 export function scriptOfCodePoint(cp) {
   for (const s of SCRIPT_RANGES) {
     for (const [lo, hi] of s.ranges) {
@@ -51,3 +61,5 @@ export function scriptOfCodePoint(cp) {
   }
   return 'Unknown';
 }
+
+export { initializeUnicodeCore, isUnicodeCoreReady, getUnicodeCore, stringToUtf16Units };

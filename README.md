@@ -1,10 +1,10 @@
 # BabelCodec
 
-**Offline-first encoding, decoding, Unicode text lab, Morse blocks, Boolean logic, inspectable SHA-256 computer, and image generation workstation** for the [TheBabelDragon](https://github.com/TheBabelDragon) ecosystem.
+**Offline-first encoding, decoding, Unicode text lab (Rust WASM core), Morse blocks, Boolean logic, inspectable SHA-256 computer, and image generation workstation** for the [TheBabelDragon](https://github.com/TheBabelDragon) ecosystem.
 
 **Live:** https://thebabeldragon.github.io/BabelCodec/
 
-**Version:** 0.9.3
+**Version:** 0.10.0
 
 ## Features
 
@@ -17,12 +17,26 @@
 - **SHA-256 Lab** — functional FIPS 180-4 engine with padding/schedule/round inspection
 - **Computer Lab** — clocked gate-level SHA-256 machine (full adders, registers, stepable rounds)
 - **CPU Lab** — educational 32-bit Harvard CPU with assembler
-- **Text Lab** — Unicode canonical form, Hebrew inspection, Morse blocks
+- **Text Lab** — Unicode canonical form via **Rust WASM Unicode Core**, Hebrew inspection, Morse blocks
 - **Hardware observability** — live schematic, bit-level adder inspect, memory/bus explorers, rewind/replay
 - **Image Studio** — Create graphics, convert PNG/JPEG/WebP/GIF/BMP/HEIF, inspect, batch; **Generate** images via provider-independent pipeline (offline mock by default)
 - **Signal Processor handoff** — Export PNG + versioned media-job manifest for SSTV encode in [signal-processor](https://github.com/TheBabelDragon/signal-processor)
-- **Zero runtime dependencies** — browser-native APIs only (optional WASM HEIF backend is pluggable)
+- **Zero runtime dependencies** — browser-native APIs + static WASM assets (no remote runtime)
 - **Public JS API** — `babelcodec`, `babelcodec/logic`, `babelcodec/sha256`, `babelcodec/computer`, `babelcodec/text`, `babelcodec/morse`, `babelcodec/scripts`, `babelcodec/media/generation`
+
+## Unicode Core (0.10.0)
+
+Rust owns Unicode semantics (graphemes UAX #29, NFC/NFD/NFKC/NFKD, XID, Script).  
+JavaScript owns presentation and I/O. There is no competing JS Unicode implementation.
+
+```js
+import { initializeUnicodeCore, toCanonical } from 'babelcodec/text';
+
+await initializeUnicodeCore();
+const c = await toCanonical('בְּרֵאשִׁית');
+```
+
+See [docs/UNICODE_FOUNDATION.md](docs/UNICODE_FOUNDATION.md).
 
 ## Quick start
 
@@ -32,11 +46,21 @@ npx serve .
 
 Open **Media** → **Generate** for the image generation workstation (mock provider works offline). After a successful generate, use **Export SSTV handoff** to download PNG + `.job.json` for Signal Processor. Open **Text Lab** for Unicode/Hebrew/Morse, **Computer Lab** for SHA-256 hardware, or **CPU Lab** for assembly.
 
+### Building the Unicode WASM package
+
+```bash
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli
+npm run build:wasm   # produces pkg/unicode_core.js + .wasm
+```
+
+CI builds and deploys these assets with GitHub Pages.
+
 ## Consumer imports
 
 ```js
 import { sha256Hex, createSha256Machine } from 'babelcodec';
-import { toCanonical } from 'babelcodec/text';
+import { initializeUnicodeCore, toCanonical } from 'babelcodec/text';
 import { encodeMorseDetailed, textToMorseBlock } from 'babelcodec/morse';
 import { hebrewAdapter } from 'babelcodec/scripts';
 import {
@@ -79,7 +103,8 @@ Docs: [docs/integrations/SIGNAL_PROCESSOR.md](docs/integrations/SIGNAL_PROCESSOR
 ```bash
 npm test
 npm run test:text
-npm run test:media
+npm run test:rust      # cargo test -p unicode-core
+npm run build:wasm
 npm run build
 npm run validate
 ```

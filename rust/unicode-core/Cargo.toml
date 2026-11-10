@@ -1,0 +1,29 @@
+[package]
+name = "unicode-core"
+version = "0.10.0"
+edition = "2021"
+description = "Canonical Unicode engine for BabelCodec — Rust authority, WASM boundary"
+license = "MIT"
+authors = ["TheBabelDragon"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+unicode-ident = "1.0"
+unicode-normalization = "0.1"
+unicode-segmentation = "1.11"
+unicode-script = "0.5"
+serde = { version = "1.0", features = ["derive"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"
+js-sys = "0.3"
+
+[dev-dependencies]
+serde_json = "1.0"
+
+[features]
+default = []
+wasm = []
