@@ -2,6 +2,7 @@
 name = "unicode-core"
 version = "0.10.0"
 edition = "2021"
+rust-version = "1.75"
 description = "Canonical Unicode engine for BabelCodec — Rust authority, WASM boundary"
 license = "MIT"
 authors = ["TheBabelDragon"]
@@ -10,10 +11,11 @@ authors = ["TheBabelDragon"]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+# Pin upper bounds loosely but prefer known-good minors for CI stability
 unicode-ident = "1.0"
-unicode-normalization = "0.1"
-unicode-segmentation = "1.11"
-unicode-script = "0.5"
+unicode-normalization = "0.1.22"
+unicode-segmentation = "=1.11.0"
+unicode-script = "0.5.5"
 serde = { version = "1.0", features = ["derive"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
