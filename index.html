@@ -2,134 +2,56 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#171a21" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark" />
   <meta name="description" content="BabelCodec — offline-first encoding, Unicode text lab, Morse, SHA-256 computer, educational CPU, Image Studio." />
   <title>BabelCodec — Byte & Symbolic Workbench</title>
-  <link rel="stylesheet" href="src/ui/styles.css?v=0.11.0" />
-  <link rel="stylesheet" href="src/ui/lab-layout.css?v=0.11.0" />
-  <link rel="stylesheet" href="src/ui/studio.css?v=0.11.0" />
+  <link rel="stylesheet" href="src/ui/styles.css?v=0.11.1" />
+  <link rel="stylesheet" href="src/ui/lab-layout.css?v=0.11.1" />
+  <link rel="stylesheet" href="src/ui/studio.css?v=0.11.1" />
 </head>
 <body>
   <header class="app-header">
     <div class="brand">
-      <span class="brand-name">BabelCodec</span>
-      <span class="brand-tag">encoding · unicode · morse · SHA-256 · computer · CPU · images</span>
+      <span class="brand-mark" aria-hidden="true">◈</span>
+      <div class="brand-text">
+        <strong>BabelCodec</strong>
+        <span class="brand-sub">byte · unicode · signal · image</span>
+      </div>
     </div>
-    <nav class="tab-nav" role="tablist" aria-label="Workbench views">
-      <button type="button" class="tab-btn active" data-tab="converter" role="tab" aria-selected="true">Converter</button>
-      <button type="button" class="tab-btn" data-tab="inspector" role="tab" aria-selected="false">Hex Inspector</button>
-      <button type="button" class="tab-btn" data-tab="structure" role="tab" aria-selected="false">Structure & Layout</button>
-      <button type="button" class="tab-btn" data-tab="logic" role="tab" aria-selected="false">Logic Lab</button>
-      <button type="button" class="tab-btn" data-tab="sha256" role="tab" aria-selected="false">SHA-256 Lab</button>
-      <button type="button" class="tab-btn" data-tab="computer" role="tab" aria-selected="false">Computer Lab</button>
-      <button type="button" class="tab-btn" data-tab="cpu" role="tab" aria-selected="false">CPU Lab</button>
-      <button type="button" class="tab-btn" data-tab="text" role="tab" aria-selected="false">Text Lab</button>
-      <button type="button" class="tab-btn" data-tab="media" role="tab" aria-selected="false">Image Studio</button>
+    <nav class="app-nav" aria-label="Primary">
+      <button type="button" class="nav-tab" data-tab="converter">Converter</button>
+      <button type="button" class="nav-tab" data-tab="inspector">Hex</button>
+      <button type="button" class="nav-tab" data-tab="structure">Structure</button>
+      <button type="button" class="nav-tab" data-tab="logic">Logic Lab</button>
+      <button type="button" class="nav-tab" data-tab="text">Text Lab</button>
+      <button type="button" class="nav-tab" data-tab="computer">Computer Lab</button>
+      <button type="button" class="nav-tab" data-tab="cpu">CPU Lab</button>
+      <button type="button" class="nav-tab" data-tab="media">Image Studio</button>
     </nav>
-    <div class="header-actions">
-      <span id="file-meta" class="diag-meta"></span>
-      <button type="button" class="btn btn-ghost" id="btn-load" title="Load local file">Load file</button>
-      <input type="file" id="file-input" />
-    </div>
   </header>
 
   <main class="app-main">
-    <div id="view-converter" class="view-panel">
-      <div class="toolbar">
-        <label>
-          From
-          <select id="from-format" aria-label="Source format"></select>
-        </label>
-        <button type="button" class="btn swap-btn" id="btn-swap" title="Swap input and output">⇄</button>
-        <label>
-          To
-          <select id="to-format" aria-label="Destination format"></select>
-        </label>
-        <label>
-          Text encoding
-          <select id="text-encoding" aria-label="Text encoding for text paths">
-            <option value="utf8">UTF-8</option>
-            <option value="ascii">ASCII (strict)</option>
-          </select>
-        </label>
-        <label>
-          <input type="checkbox" id="live-convert" checked />
-          Live
-        </label>
-        <button type="button" class="btn btn-primary" id="btn-convert">Convert</button>
-        <button type="button" class="btn" id="btn-clear">Clear</button>
-        <button type="button" class="btn" id="btn-copy">Copy output</button>
-        <button type="button" class="btn" id="btn-download">Download</button>
-      </div>
-
-      <div class="converter-grid">
-        <section class="panel" aria-label="Input">
-          <div class="panel-header">
-            <span class="panel-title">Input</span>
-          </div>
-          <div class="panel-body">
-            <textarea id="input-area" class="io-area" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Enter text, hex, binary, Base64, or load a file…" aria-label="Conversion input"></textarea>
-          </div>
-        </section>
-
-        <section class="panel" aria-label="Output">
-          <div class="panel-header">
-            <span class="panel-title">Output</span>
-          </div>
-          <div class="panel-body">
-            <textarea id="output-area" class="io-area" spellcheck="false" autocomplete="off" readonly placeholder="Converted output appears here" aria-label="Conversion output"></textarea>
-          </div>
-        </section>
-      </div>
-    </div>
-
-    <div id="view-inspector" class="view-panel" hidden>
-      <div id="hex-inspector-root" class="hex-inspector-root"></div>
-    </div>
-
-    <div id="view-structure" class="view-panel" hidden>
-      <div id="structure-root" class="structure-root"></div>
-    </div>
-
-    <div id="view-logic" class="view-panel" hidden>
-      <div id="logic-root" class="logic-root"></div>
-    </div>
-
-    <div id="view-sha256" class="view-panel" hidden>
-      <div id="sha256-root" class="sha256-root"></div>
-    </div>
-
-    <div id="view-computer" class="view-panel" hidden>
-      <div id="computer-root" class="computer-root"></div>
-    </div>
-
-    <div id="view-cpu" class="view-panel" hidden>
-      <div id="cpu-root" class="cpu-root"></div>
-    </div>
-
-    <div id="view-text" class="view-panel" hidden>
-      <div id="text-root" class="text-root"></div>
-    </div>
-
-    <div id="view-media" class="view-panel" hidden>
+    <section id="view-converter" class="view" hidden></section>
+    <section id="view-inspector" class="view" hidden></section>
+    <section id="view-structure" class="view" hidden></section>
+    <section id="view-logic" class="view" hidden></section>
+    <section id="view-text" class="view" hidden></section>
+    <section id="view-computer" class="view" hidden></section>
+    <section id="view-cpu" class="view" hidden></section>
+    <section id="view-media" class="view">
       <div id="media-root" class="media-root"></div>
-    </div>
-
-    <div class="diagnostics" id="diagnostics" role="status" aria-live="polite">
-      <span class="diag-info">Ready.</span>
-    </div>
+    </section>
   </main>
 
   <footer class="app-footer">
-    <span>BabelCodec v0.11.0 · offline · client-side only · Unicode Core WASM</span>
+    <span>BabelCodec v0.11.1 · offline · client-side only · Unicode Core WASM</span>
     <span>
       <a href="https://github.com/TheBabelDragon/BabelCodec">GitHub</a>
       · TheBabelDragon
     </span>
   </footer>
 
-  <script type="module" src="src/ui/app.js?v=0.11.0"></script>
+  <script type="module" src="src/ui/app.js?v=0.11.1"></script>
 </body>
 </html>
