@@ -3,11 +3,8 @@
  * Deterministic Unicode Core WASM build.
  * Canonical command: npm run build:wasm
  *
- * Produces:
- *   pkg/unicode_core.js
- *   pkg/unicode_core_bg.wasm
- *
- * Fails if either artifact is missing, empty, or JS does not reference the wasm.
+ * wasm-bindgen CLI version must match the wasm-bindgen crate schema
+ * linked into the .wasm (currently 0.2.130 via Cargo.lock resolution).
  */
 
 import { spawnSync } from 'node:child_process';
@@ -26,7 +23,8 @@ const WASM_SRC = join(
   'target/wasm32-unknown-unknown/release/unicode_core.wasm',
 );
 
-const WASM_BINDGEN_VERSION = process.env.WASM_BINDGEN_VERSION || '0.2.100';
+// Default matches current crates.io resolution of wasm-bindgen = "0.2"
+const WASM_BINDGEN_VERSION = process.env.WASM_BINDGEN_VERSION || '0.2.130';
 
 function run(cmd, args, opts = {}) {
   const r = spawnSync(cmd, args, {
@@ -48,7 +46,7 @@ function ensureWasmBindgen() {
     const ver = (which.stdout || which.stderr || '').trim();
     console.log(`wasm-bindgen present: ${ver}`);
     if (ver.includes(WASM_BINDGEN_VERSION)) return;
-    console.log(`version mismatch (want ${WASM_BINDGEN_VERSION}); reinstalling…`);
+    console.log(`version mismatch (want ${WASM_BINDGEN_VERSION}); installing…`);
   } else {
     console.log(`Installing wasm-bindgen-cli ${WASM_BINDGEN_VERSION}…`);
   }

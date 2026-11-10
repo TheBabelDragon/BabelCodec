@@ -16,8 +16,9 @@ concurrency:
   group: pages-${{ github.ref }}
   cancel-in-progress: true
 
+# Must match the wasm-bindgen crate version linked into the .wasm
 env:
-  WASM_BINDGEN_VERSION: '0.2.100'
+  WASM_BINDGEN_VERSION: '0.2.130'
 
 jobs:
   test:
@@ -44,7 +45,7 @@ jobs:
       - name: Cargo test
         run: cd rust && cargo test -p unicode-core --lib -- --nocapture
 
-      - name: Install wasm-bindgen-cli (pinned)
+      - name: Install wasm-bindgen-cli (pinned to crate schema)
         run: |
           set -euo pipefail
           if command -v wasm-bindgen >/dev/null 2>&1; then
@@ -118,7 +119,7 @@ jobs:
             cd rust && cargo generate-lockfile
           fi
 
-      - name: Install wasm-bindgen-cli (pinned)
+      - name: Install wasm-bindgen-cli (pinned to crate schema)
         run: |
           set -euo pipefail
           if command -v wasm-bindgen >/dev/null 2>&1; then
