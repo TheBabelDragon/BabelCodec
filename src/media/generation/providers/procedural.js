@@ -1,6 +1,7 @@
 /**
  * Deterministic, seed-driven procedural image provider.
- * Fully offline. Zero new dependencies. Same prompt+seed+params → byte-identical output.
+ * Fully offline. Zero new dependencies.
+ * Same prompt + seed + params → byte-identical RGBA/PNG on every run.
  *
  * Provider version: 0.11.0
  */
@@ -12,7 +13,7 @@ import { sha256 } from '../../../sha256/index.js';
 export const PROCEDURAL_PROVIDER_VERSION = '0.11.0';
 export const PROCEDURAL_PROVIDER_ID = 'procedural';
 
-/** SSTV-friendly presets (native-ish). */
+/** SSTV-friendly size presets. */
 export const SSTV_PRESETS = Object.freeze({
   martin_m1: { width: 320, height: 256, label: 'Martin M1 (320×256)' },
   robot36: { width: 320, height: 240, label: 'Robot 36 (320×240)' },
@@ -22,15 +23,14 @@ const GENERATORS = Object.freeze(['fbm', 'truchet', 'gray_scott']);
 
 /**
  * Map a 32-byte SHA-256 digest to generator parameters.
- * Pure and unit-testable; all fields derived only from digest bytes.
- * @param {Uint8Array|string} digest 32-byte digest or 64-char hex
+ * Pure and unit-testable; fields depend only on digest bytes.
+ * @param {Uint8Array|string} digest
  * @returns {object}
  */
 export function digestToParams(digest) {
   const b = normalizeDigest(digest);
-  const generator = GENERATORS[b[0] % GENERATORS.length];
   return {
-    generator,
+    generator: GENERATORS[b[0] % GENERATORS.length],
     hue: (b[1] / 255) * 360,
     sat: 0.4 + (b[2] / 255) * 0.5,
     light: 0.35 + (b[3] / 255) * 0.35,
@@ -52,9 +52,7 @@ export function digestToParams(digest) {
 function normalizeDigest(digest) {
   if (typeof digest === 'string') {
     const hex = digest.replace(/^0x/i, '').toLowerCase();
-    if (!/^[0-9a-f]{64}$/.test(hex)) {
-      throw new Error('digest hex must be 64 lowercase hex chars');
-    }
+    if (!/^[0-9a-f]{64}$/.test(hex)) throw new Error('digest hex must be 64 hex chars');
     const out = new Uint8Array(32);
     for (let i = 0; i < 32; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
     return out;
@@ -62,22 +60,21 @@ function normalizeDigest(digest) {
   if (!(digest instanceof Uint8Array) || digest.length < 32) {
     throw new Error('digest must be Uint8Array(32) or hex string');
   }
-  return digest.subarray(0, 32);
+  return digest.length === 32 ? digest : digest.subarray(0, 32);
 }
 
 /**
- * Compute canonical digest for prompt + seed.
+ * Canonical material: `${prompt}\n${seed}` → SHA-256.
  * @param {string} prompt
  * @param {string} seed
- * @returns {{ digest: Uint8Array, hex: string }}
  */
 export function promptSeedDigest(prompt, seed) {
   const material = `${String(prompt ?? '')}\n${String(seed ?? '')}`;
   const result = sha256(material);
-  return { digest: result.digest, hex: result.hex };
+  return { digest: result.digest, hex: result.hex, material };
 }
 
-/** sfc32 seeded PRNG — pure, no Math.random. */
+/** sfc32 PRNG — no Math.random / Date. */
 export function sfc32(a, b, c, d) {
   return function next() {
     a >>>= 0;
@@ -99,7 +96,8 @@ export function rngFromDigest(digest, salt = 0) {
   const b = normalizeDigest(digest);
   const u = (i) =>
     ((b[i % 32] << 24) | (b[(i + 1) % 32] << 16) | (b[(i + 2) % 32] << 8) | b[(i + 3) % 32]) >>> 0;
-  return sfc32(u(0) ^ salt, u(4) ^ (salt * 0x9e3779b9), u(8), u(12));
+  const s = salt >>> 0;
+  return sfc32(u(0) ^ s, u(4) ^ Math.imul(s, 0x9e3779b9), u(8), u(12));
 }
 
 function yieldTick() {
@@ -156,9 +154,8 @@ function hslToRgb(h, s, l) {
 function palette(t, params) {
   const u = Math.max(0, Math.min(1, t));
   const h = params.hue + u * 80 + params.paletteShift * 60;
-  const s = params.sat;
   const l = params.light * (0.55 + u * params.contrast);
-  return hslToRgb(h, s, Math.max(0.05, Math.min(0.92, l)));
+  return hslToRgb(h, params.sat, Math.max(0.05, Math.min(0.92, l)));
 }
 
 function applySymmetry(x, y, w, h, symmetry) {
@@ -173,18 +170,17 @@ function applySymmetry(x, y, w, h, symmetry) {
   return { x: xx, y: yy };
 }
 
-/** Value noise on integer lattice with smoothstep. */
-function valueNoise2D(x, y, rngTable) {
+function valueNoise2D(x, y, table) {
   const x0 = Math.floor(x);
   const y0 = Math.floor(y);
   const fx = x - x0;
   const fy = y - y0;
   const sx = fx * fx * (3 - 2 * fx);
   const sy = fy * fy * (3 - 2 * fy);
-  const n00 = hash2(x0, y0, rngTable);
-  const n10 = hash2(x0 + 1, y0, rngTable);
-  const n01 = hash2(x0, y0 + 1, rngTable);
-  const n11 = hash2(x0 + 1, y0 + 1, rngTable);
+  const n00 = hash2(x0, y0, table);
+  const n10 = hash2(x0 + 1, y0, table);
+  const n01 = hash2(x0, y0 + 1, table);
+  const n11 = hash2(x0 + 1, y0 + 1, table);
   const nx0 = n00 * (1 - sx) + n10 * sx;
   const nx1 = n01 * (1 - sx) + n11 * sx;
   return nx0 * (1 - sy) + nx1 * sy;
@@ -201,10 +197,7 @@ function buildNoiseTable(rng, size = 256) {
   return t;
 }
 
-/**
- * fBm / value-noise field with palette ramp.
- * @returns {Uint8ClampedArray} RGBA length width*height*4
- */
+/** fBm / value-noise field with palette ramp. */
 export function generateFbm(params, width, height, rng) {
   const table = buildNoiseTable(rng, 256);
   const out = new Uint8ClampedArray(width * height * 4);
@@ -247,7 +240,7 @@ export function generateFbm(params, width, height, rng) {
   return out;
 }
 
-/** Truchet tile pattern. */
+/** Truchet tile pattern (quarter-circle arcs). */
 export function generateTruchet(params, width, height, rng) {
   const tile = Math.max(4, params.tileSize | 0);
   const cols = Math.ceil(width / tile);
@@ -259,6 +252,7 @@ export function generateTruchet(params, width, height, rng) {
   const bg = palette(0.15, params);
   const fg = palette(0.85, params);
   const thickness = Math.max(1, Math.floor(tile * 0.18));
+  const r0 = tile / 2;
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -268,24 +262,14 @@ export function generateTruchet(params, width, height, rng) {
       const lx = s.x - cx * tile;
       const ly = s.y - cy * tile;
       const o = orient[(cy % rows) * cols + (cx % cols)];
-      let on = false;
-      if (o === 0) {
-        // arc TL-BR diagonal band
-        on = Math.abs(lx - ly) <= thickness || Math.abs(lx + ly - tile) <= thickness;
-      } else {
-        on = Math.abs(lx + ly - tile) <= thickness || Math.abs(lx - ly) <= thickness;
-      }
-      // cleaner: quarter-circle style via distance
       const d1 = Math.hypot(lx, ly);
       const d2 = Math.hypot(lx - tile, ly - tile);
       const d3 = Math.hypot(lx - tile, ly);
       const d4 = Math.hypot(lx, ly - tile);
-      const r0 = tile / 2;
-      if (o === 0) {
-        on = Math.abs(d1 - r0) <= thickness || Math.abs(d2 - r0) <= thickness;
-      } else {
-        on = Math.abs(d3 - r0) <= thickness || Math.abs(d4 - r0) <= thickness;
-      }
+      const on =
+        o === 0
+          ? Math.abs(d1 - r0) <= thickness || Math.abs(d2 - r0) <= thickness
+          : Math.abs(d3 - r0) <= thickness || Math.abs(d4 - r0) <= thickness;
       const col = on ? fg : bg;
       const i = (y * width + x) * 4;
       out[i] = col.r;
@@ -307,7 +291,6 @@ export function generateGrayScott(params, width, height, rng) {
   U.fill(1);
   V.fill(0);
 
-  // seed patches from RNG
   const patches = 3 + (Math.floor(rng() * 5) | 0);
   for (let p = 0; p < patches; p++) {
     const cx = Math.floor(rng() * width);
@@ -395,37 +378,14 @@ const GENERATOR_FNS = {
   gray_scott: generateGrayScott,
 };
 
-/**
- * Render RGBA buffer for given params (synchronous core).
- */
 export function renderRgba(params, width, height, rng) {
   const fn = GENERATOR_FNS[params.generator] || generateFbm;
   return fn(params, width, height, rng);
 }
 
-/**
- * Encode RGB PNG from RGBA buffer (filter None + zlib store).
- * @param {Uint8ClampedArray|Uint8Array} rgba
- * @param {number} width
- * @param {number} height
- * @returns {Uint8Array}
- */
-export function encodeRgbaToPng(rgba, width, height) {
-  const w = width | 0;
-  const h = height | 0;
-  const raw = new Uint8Array((w * 3 + 1) * h);
-  for (let y = 0; y < h; y++) {
-    const row = y * (w * 3 + 1);
-    raw[row] = 0;
-    for (let x = 0; x < w; x++) {
-      const si = (y * w + x) * 4;
-      const di = row + 1 + x * 3;
-      raw[di] = rgba[si];
-      raw[di + 1] = rgba[si + 1];
-      raw[di + 2] = rgba[si + 2];
-    }
-  }
-  return encodePngRgb(w, h, raw);
+export function hashRgba(rgba) {
+  const bytes = rgba instanceof Uint8Array ? rgba : new Uint8Array(rgba);
+  return sha256(bytes).hex;
 }
 
 function crc32(buf) {
@@ -492,34 +452,31 @@ function zlibStore(data) {
   return concat([new Uint8Array([0x78, 0x01]), concat(blocks), new Uint8Array(u32(adler32(data)))]);
 }
 
-function encodePngRgb(w, h, raw) {
-  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+/** Encode RGB PNG from RGBA buffer. */
+export function encodeRgbaToPng(rgba, width, height) {
+  const w = width | 0;
+  const h = height | 0;
+  const raw = new Uint8Array((w * 3 + 1) * h);
+  for (let y = 0; y < h; y++) {
+    const row = y * (w * 3 + 1);
+    raw[row] = 0;
+    for (let x = 0; x < w; x++) {
+      const si = (y * w + x) * 4;
+      const di = row + 1 + x * 3;
+      raw[di] = rgba[si];
+      raw[di + 1] = rgba[si + 1];
+      raw[di + 2] = rgba[si + 2];
+    }
+  }
+  const signature = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
   const ihdr = chunk('IHDR', new Uint8Array([...u32(w), ...u32(h), 8, 2, 0, 0, 0]));
   const idat = chunk('IDAT', zlibStore(raw));
   const iend = chunk('IEND', new Uint8Array(0));
-  return concat([new Uint8Array(signature), ihdr, idat, iend]);
-}
-
-function fnv1aHex(bytes) {
-  let h = 2166136261;
-  for (let i = 0; i < bytes.length; i++) {
-    h ^= bytes[i];
-    h = Math.imul(h, 16777619);
-  }
-  return ('00000000' + (h >>> 0).toString(16)).slice(-8);
+  return concat([signature, ihdr, idat, iend]);
 }
 
 /**
- * Hash RGBA (or any bytes) for determinism tests.
- * Uses project SHA-256 when practical; for large buffers still SHA-256.
- */
-export function hashRgba(rgba) {
-  return sha256(rgba instanceof Uint8Array ? rgba : new Uint8Array(rgba)).hex;
-}
-
-/**
- * Generate one deterministic image.
- * @param {{ prompt: string, seed?: string, width?: number, height?: number, signal?: AbortSignal, onProgress?: Function, forceGenerator?: string }}
+ * Generate one deterministic procedural image (async for cancel/yield).
  */
 export async function generateProceduralImage(opts) {
   const prompt = String(opts.prompt ?? '');
@@ -539,10 +496,140 @@ export async function generateProceduralImage(opts) {
   }
 
   checkAbort(signal);
-  onProgress(0.15);
+  onProgress(0.12);
   await yieldTick();
   checkAbort(signal);
 
-  const rng = rngFromDigest(digest, 0xpr0c ^ width ^ (height << 8));
-  // salt must be integer — fix
+  const salt = (width + (height << 12)) >>> 0;
+  const rng = rngFromDigest(digest, salt);
+
+  // Gray-Scott is heavier — yield mid-run via chunked steps not needed for small sizes
+  onProgress(0.2);
+  const rgba = renderRgba(params, width, height, rng);
+  checkAbort(signal);
+  onProgress(0.75);
+  await yieldTick();
+  checkAbort(signal);
+
+  // Validate buffer
+  for (let i = 0; i < rgba.length; i++) {
+    const v = rgba[i];
+    if (!Number.isFinite(v) || v < 0 || v > 255) {
+      throw new Error(`invalid pixel value at ${i}: ${v}`);
+    }
+  }
+
+  const png = encodeRgbaToPng(rgba, width, height);
+  onProgress(0.95);
+
+  return {
+    rgba,
+    png,
+    width,
+    height,
+    digestHex: hex,
+    params: { ...params },
+    generator: params.generator,
+    seed,
+    providerVersion: PROCEDURAL_PROVIDER_VERSION,
+  };
+}
+
+/**
+ * Create and optionally register the procedural provider.
+ * @param {{ autoRegister?: boolean }} [opts]
+ */
+export function createProceduralProvider(opts = {}) {
+  const provider = {
+    id: PROCEDURAL_PROVIDER_ID,
+    displayName: 'Procedural (offline)',
+    requiresNetwork: false,
+
+    async getCapabilities() {
+      return {
+        providerId: PROCEDURAL_PROVIDER_ID,
+        displayName: 'Procedural (offline)',
+        requiresNetwork: false,
+        available: true,
+        textToImage: true,
+        imageToImage: false,
+        models: [
+          { id: 'procedural-auto', name: 'Auto (digest-selected)' },
+          { id: 'procedural-fbm', name: 'fBm value-noise' },
+          { id: 'procedural-truchet', name: 'Truchet tiles' },
+          { id: 'procedural-gray-scott', name: 'Gray-Scott RD' },
+        ],
+        maxVariants: 4,
+        maxDimension: 2048,
+        outputFormats: ['png'],
+        presets: SSTV_PRESETS,
+        providerVersion: PROCEDURAL_PROVIDER_VERSION,
+      };
+    },
+
+    async generate(request, genOpts = {}) {
+      const signal = genOpts.signal;
+      const onProgress = genOpts.onProgress || (() => {});
+      const variants = Math.max(1, Math.min(4, request.variants || 1));
+      const results = [];
+
+      const forceMap = {
+        'procedural-fbm': 'fbm',
+        'procedural-truchet': 'truchet',
+        'procedural-gray-scott': 'gray_scott',
+      };
+      const forceGenerator = forceMap[request.modelId] || undefined;
+
+      for (let i = 0; i < variants; i++) {
+        checkAbort(signal);
+        const seedBase = request.seed != null ? String(request.seed) : '';
+        const seed = variants > 1 ? `${seedBase}|v${i}` : seedBase;
+
+        const img = await generateProceduralImage({
+          prompt: request.prompt,
+          seed,
+          width: request.width || 256,
+          height: request.height || 256,
+          signal,
+          forceGenerator,
+          onProgress: (p) => onProgress((i + p) / variants),
+        });
+
+        results.push({
+          schemaVersion: SCHEMA_VERSION,
+          resultId: `proc-r-${img.digestHex.slice(0, 12)}-${i}`,
+          variantIndex: i,
+          asset: {
+            schemaVersion: SCHEMA_VERSION,
+            assetId: `proc-a-${img.digestHex.slice(0, 12)}-${i}`,
+            bytes: img.png,
+            mimeType: 'image/png',
+            width: img.width,
+            height: img.height,
+            filename: `procedural-${img.generator}-${i}.png`,
+            createdAt: 0,
+          },
+          providerMetadata: {
+            model: request.modelId || 'procedural-auto',
+            deterministic: true,
+            providerVersion: PROCEDURAL_PROVIDER_VERSION,
+            digestHex: img.digestHex,
+            seed: img.seed,
+            generator: img.generator,
+            params: img.params,
+          },
+        });
+      }
+
+      return {
+        providerJobId: `proc-job-${results[0]?.providerMetadata?.digestHex?.slice(0, 16) || 'x'}`,
+        results,
+      };
+    },
+  };
+
+  if (opts.autoRegister !== false) {
+    registerProvider(provider);
+  }
+  return provider;
 }
