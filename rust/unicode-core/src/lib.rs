@@ -247,10 +247,11 @@ pub fn is_xid_identifier(text: &str) -> bool {
 pub fn inspect_canonical(text: &str, normalization_profile: &str) -> CanonicalInspection {
     let mut diagnostics = Vec::new();
     let norm = apply_normalization(text, normalization_profile);
+    // Own the analysis string so we can move `norm` into the result.
     let analysis_text = if norm.profile == "NONE" {
-        text
+        text.to_string()
     } else {
-        norm.text.as_str()
+        norm.text.clone()
     };
     if norm.changed {
         diagnostics.push(Diagnostic {
@@ -259,9 +260,9 @@ pub fn inspect_canonical(text: &str, normalization_profile: &str) -> CanonicalIn
             detail: Some(norm.profile.clone()),
         });
     }
-    let scalars = iterate_code_points(analysis_text);
-    let graphemes = segment_graphemes(analysis_text);
-    let script = detect_scripts(analysis_text);
+    let scalars = iterate_code_points(&analysis_text);
+    let graphemes = segment_graphemes(&analysis_text);
+    let script = detect_scripts(&analysis_text);
     CanonicalInspection {
         schema: "babelcodec.canonical.v1".to_string(),
         engine_version: ENGINE_VERSION.to_string(),
@@ -274,7 +275,7 @@ pub fn inspect_canonical(text: &str, normalization_profile: &str) -> CanonicalIn
             utf16_units: Some(Utf16Units::from_str(text)),
         },
         analysis: AnalysisView {
-            text: analysis_text.to_string(),
+            text: analysis_text,
             codepoints: scalars.iter().map(|c| c.u_plus.clone()).collect(),
             scalars,
         },
