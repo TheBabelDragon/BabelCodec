@@ -32,21 +32,30 @@ jobs:
           targets: wasm32-unknown-unknown
           components: rustfmt
 
+      - name: Generate Cargo.lock
+        run: |
+          cd rust
+          cargo generate-lockfile
+
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli --locked
 
-      - name: Cargo fmt check
-        run: cd rust && cargo fmt --check
+      - name: Cargo fmt
+        run: |
+          cd rust
+          cargo fmt --all
+          cargo fmt --all -- --check
 
       - name: Cargo test (native)
-        run: cd rust && cargo test -p unicode-core
+        run: cd rust && cargo test -p unicode-core --locked
 
       - name: Build WASM package
         run: |
           cd rust
-          cargo build --release --target wasm32-unknown-unknown -p unicode-core
+          cargo build --release --target wasm32-unknown-unknown -p unicode-core --locked
           wasm-bindgen --target web --out-dir ../pkg \
             target/wasm32-unknown-unknown/release/unicode_core.wasm
+          ls -la ../pkg/
 
       - name: Run all Node tests
         run: node --test tests/**/*.test.js tests/logic/**/*.test.js tests/sha256/**/*.test.js tests/computer/**/*.test.js tests/cpu/**/*.test.js tests/text/**/*.test.js tests/scripts/**/*.test.js tests/morse/**/*.test.js tests/digest/**/*.test.js tests/computer/architecture/**/*.test.js tests/media/**/*.test.js tests/ui/**/*.test.js
@@ -75,13 +84,16 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      - name: Generate Cargo.lock
+        run: cd rust && cargo generate-lockfile
+
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli --locked
 
       - name: Build WASM for Pages
         run: |
           cd rust
-          cargo build --release --target wasm32-unknown-unknown -p unicode-core
+          cargo build --release --target wasm32-unknown-unknown -p unicode-core --locked
           wasm-bindgen --target web --out-dir ../pkg \
             target/wasm32-unknown-unknown/release/unicode_core.wasm
 
