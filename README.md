@@ -4,7 +4,7 @@
 
 **Live:** https://thebabeldragon.github.io/BabelCodec/
 
-**Version:** 0.10.0
+**Version:** 0.11.0
 
 ## Features
 
@@ -19,7 +19,7 @@
 - **CPU Lab** — educational 32-bit Harvard CPU with assembler
 - **Text Lab** — Unicode canonical form via **Rust WASM Unicode Core**, Hebrew inspection, Morse blocks
 - **Hardware observability** — live schematic, bit-level adder inspect, memory/bus explorers, rewind/replay
-- **Image Studio** — Create graphics, convert PNG/JPEG/WebP/GIF/BMP/HEIF, inspect, batch; **Generate** images via provider-independent pipeline (offline mock by default)
+- **Image Studio** — Create graphics, convert PNG/JPEG/WebP/GIF/BMP/HEIF, inspect, batch; **Generate** images via provider-independent pipeline (offline **procedural** + mock by default)
 - **Signal Processor handoff** — Export PNG + versioned media-job manifest for SSTV encode in [signal-processor](https://github.com/TheBabelDragon/signal-processor)
 - **Zero runtime dependencies** — browser-native APIs + static WASM assets (no remote runtime)
 - **Public JS API** — `babelcodec`, `babelcodec/logic`, `babelcodec/sha256`, `babelcodec/computer`, `babelcodec/text`, `babelcodec/morse`, `babelcodec/scripts`, `babelcodec/media/generation`
@@ -44,7 +44,7 @@ See [docs/UNICODE_FOUNDATION.md](docs/UNICODE_FOUNDATION.md).
 npx serve .
 ```
 
-Open **Media** → **Generate** for the image generation workstation (mock provider works offline). After a successful generate, use **Export SSTV handoff** to download PNG + `.job.json` for Signal Processor. Open **Text Lab** for Unicode/Hebrew/Morse, **Computer Lab** for SHA-256 hardware, or **CPU Lab** for assembly.
+Open **Media** → **Generate** for the image generation workstation (procedural + mock work fully offline). After a successful generate, use **Export SSTV handoff** to download PNG + `.job.json` for Signal Processor. Open **Text Lab** for Unicode/Hebrew/Morse, **Computer Lab** for SHA-256 hardware, or **CPU Lab** for assembly.
 
 ### Building the Unicode WASM package
 
@@ -68,6 +68,7 @@ import {
   submitGeneration,
   awaitJob,
   registerProvider,
+  createProceduralProvider,
 } from 'babelcodec/media/generation';
 import {
   createImageToSstvManifest,
@@ -80,11 +81,12 @@ import {
 
 Provider-independent pipeline with optional TPU assist:
 
-- Mock provider for offline / CI
+- **Procedural** provider — seed-driven offline fBm / Truchet / Gray-Scott (byte-identical for same prompt+seed)
+- Mock provider for offline / CI solid-color placeholders
 - Explicit TPU backend registration (never inferred from browser APIs)
-- Job lifecycle, provenance, Image Studio ingestion
+- Job lifecycle, provenance (digest + params), Image Studio ingestion, SSTV handoff
 
-See [docs/IMAGE_GENERATION.md](docs/IMAGE_GENERATION.md), [docs/GENERATION_SECURITY.md](docs/GENERATION_SECURITY.md).
+See [docs/IMAGE_GENERATION.md](docs/IMAGE_GENERATION.md), [docs/GENERATION_PROVIDERS.md](docs/GENERATION_PROVIDERS.md), [docs/GENERATION_SECURITY.md](docs/GENERATION_SECURITY.md).
 
 ## Signal Processor integration
 
@@ -103,6 +105,7 @@ Docs: [docs/integrations/SIGNAL_PROCESSOR.md](docs/integrations/SIGNAL_PROCESSOR
 ```bash
 npm test
 npm run test:text
+npm run test:media
 npm run test:rust      # cargo test -p unicode-core
 npm run build:wasm
 npm run build
