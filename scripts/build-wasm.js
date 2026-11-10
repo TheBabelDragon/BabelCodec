@@ -44,18 +44,20 @@ function run(cmd, args, opts = {}) {
 
 function ensureWasmBindgen() {
   const which = spawnSync('wasm-bindgen', ['--version'], { encoding: 'utf8' });
-  if (which.status === 0 && (which.stdout || '').includes(WASM_BINDGEN_VERSION)) {
-    console.log(`wasm-bindgen ${WASM_BINDGEN_VERSION} already available`);
-    return;
+  if (which.status === 0) {
+    const ver = (which.stdout || which.stderr || '').trim();
+    console.log(`wasm-bindgen present: ${ver}`);
+    if (ver.includes(WASM_BINDGEN_VERSION)) return;
+    console.log(`version mismatch (want ${WASM_BINDGEN_VERSION}); reinstalling…`);
+  } else {
+    console.log(`Installing wasm-bindgen-cli ${WASM_BINDGEN_VERSION}…`);
   }
-  console.log(`Installing wasm-bindgen-cli ${WASM_BINDGEN_VERSION}…`);
   run('cargo', [
     'install',
     'wasm-bindgen-cli',
     '--version',
     WASM_BINDGEN_VERSION,
     '--locked',
-    '--force',
   ]);
 }
 
@@ -65,7 +67,6 @@ function main() {
     throw new Error('rust/unicode-core not found');
   }
 
-  // Prefer committed lockfile when present
   if (!existsSync(join(RUST, 'Cargo.lock'))) {
     console.log('Generating Cargo.lock…');
     run('cargo', ['generate-lockfile'], { cwd: RUST });
@@ -92,19 +93,12 @@ function main() {
   }
 
   mkdirSync(PKG, { recursive: true });
-  // Clear prior outputs so we never ship a mixed pair
   for (const f of [JS_OUT, WASM_OUT]) {
     if (existsSync(f)) rmSync(f);
   }
 
   console.log('wasm-bindgen --target web --out-dir pkg');
-  run('wasm-bindgen', [
-    '--target',
-    'web',
-    '--out-dir',
-    PKG,
-    WASM_SRC,
-  ]);
+  run('wasm-bindgen', ['--target', 'web', '--out-dir', PKG, WASM_SRC]);
 
   if (!existsSync(JS_OUT)) throw new Error(`Missing ${JS_OUT}`);
   if (!existsSync(WASM_OUT)) throw new Error(`Missing ${WASM_OUT}`);

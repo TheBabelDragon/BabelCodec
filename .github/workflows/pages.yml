@@ -45,7 +45,17 @@ jobs:
         run: cd rust && cargo test -p unicode-core --lib -- --nocapture
 
       - name: Install wasm-bindgen-cli (pinned)
-        run: cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked --force
+        run: |
+          set -euo pipefail
+          if command -v wasm-bindgen >/dev/null 2>&1; then
+            cur=$(wasm-bindgen --version || true)
+            echo "found: $cur"
+            if echo "$cur" | grep -q "${WASM_BINDGEN_VERSION}"; then
+              echo "wasm-bindgen ${WASM_BINDGEN_VERSION} already installed"
+              exit 0
+            fi
+          fi
+          cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked
 
       - name: Build WASM (npm run build:wasm)
         run: |
@@ -54,7 +64,6 @@ jobs:
           test -s pkg/unicode_core.js
           test -s pkg/unicode_core_bg.wasm
           ls -la pkg/
-          # Pair integrity
           grep -q unicode_core_bg.wasm pkg/unicode_core.js
 
       - name: Run Node tests
@@ -110,7 +119,16 @@ jobs:
           fi
 
       - name: Install wasm-bindgen-cli (pinned)
-        run: cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked --force
+        run: |
+          set -euo pipefail
+          if command -v wasm-bindgen >/dev/null 2>&1; then
+            cur=$(wasm-bindgen --version || true)
+            if echo "$cur" | grep -q "${WASM_BINDGEN_VERSION}"; then
+              echo "wasm-bindgen ${WASM_BINDGEN_VERSION} already installed"
+              exit 0
+            fi
+          fi
+          cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked
 
       - name: Build WASM into pkg/ for Pages
         run: |
@@ -137,22 +155,21 @@ jobs:
         run: |
           set -euo pipefail
           BASE="https://thebabeldragon.github.io/BabelCodec"
-          echo "Waiting briefly for CDN…"
-          sleep 15
-          for i in 1 2 3 4 5 6; do
+          echo "Waiting for CDN…"
+          code_js=000
+          code_wasm=000
+          for i in 1 2 3 4 5 6 7 8; do
             code_js=$(curl -s -o /tmp/uc.js -w "%{http_code}" "$BASE/pkg/unicode_core.js" || echo 000)
             code_wasm=$(curl -s -o /tmp/uc.wasm -w "%{http_code}" "$BASE/pkg/unicode_core_bg.wasm" || echo 000)
             echo "attempt $i js=$code_js wasm=$code_wasm"
             if [ "$code_js" = "200" ] && [ "$code_wasm" = "200" ]; then
               break
             fi
-            sleep 10
+            sleep 15
           done
           test "$code_js" = "200"
           test "$code_wasm" = "200"
-          # Not an HTML 404 page
           head -c 20 /tmp/uc.js | grep -vq '<!'
-          # WASM magic \0asm
           python3 -c "d=open('/tmp/uc.wasm','rb').read(4); assert d==b'\\x00asm', d"
           grep -q unicode_core_bg.wasm /tmp/uc.js
           echo "Post-deploy smoke OK"
