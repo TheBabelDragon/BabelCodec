@@ -1,7 +1,8 @@
 node_modules/
 .DS_Store
+dist/
 *.log
-rust/target/
 pkg/
-*.wasm
-!pkg/*.wasm
+.env
+**/.env
+services/generation-gateway/.env

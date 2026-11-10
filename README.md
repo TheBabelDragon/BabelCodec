@@ -20,6 +20,7 @@
 - **Text Lab** — Unicode canonical form via **Rust WASM Unicode Core**, Hebrew inspection, Morse blocks
 - **Hardware observability** — live schematic, bit-level adder inspect, memory/bus explorers, rewind/replay
 - **Image Studio** — Create graphics, convert PNG/JPEG/WebP/GIF/BMP/HEIF, inspect, batch; **Generate** images via provider-independent pipeline (offline **procedural** + mock by default)
+- **Optional generation gateway** — separately deployable Node service for remote providers; **no API keys in the browser**
 - **Signal Processor handoff** — Export PNG + versioned media-job manifest for SSTV encode in [signal-processor](https://github.com/TheBabelDragon/signal-processor)
 - **Zero runtime dependencies** — browser-native APIs + static WASM assets (no remote runtime)
 - **Public JS API** — `babelcodec`, `babelcodec/logic`, `babelcodec/sha256`, `babelcodec/computer`, `babelcodec/text`, `babelcodec/morse`, `babelcodec/scripts`, `babelcodec/media/generation`
@@ -44,7 +45,7 @@ See [docs/UNICODE_FOUNDATION.md](docs/UNICODE_FOUNDATION.md).
 npx serve .
 ```
 
-Open **Media** → **Generate** for the image generation workstation (procedural + mock work fully offline). After a successful generate, use **Export SSTV handoff** to download PNG + `.job.json` for Signal Processor. Open **Text Lab** for Unicode/Hebrew/Morse, **Computer Lab** for SHA-256 hardware, or **CPU Lab** for assembly.
+Open **Image Studio** → **Generate** for the image generation workstation (procedural + mock work fully offline). After a successful generate, use **Export SSTV handoff** to download PNG + `.job.json` for Signal Processor. Open **Text Lab** for Unicode/Hebrew/Morse, **Computer Lab** for SHA-256 hardware, or **CPU Lab** for assembly.
 
 ### Building the Unicode WASM package
 
@@ -55,6 +56,26 @@ npm run build:wasm   # produces pkg/unicode_core.js + .wasm
 ```
 
 CI builds and deploys these assets with GitHub Pages.
+
+## Image generation
+
+| Mode | Status |
+|------|--------|
+| Offline mock + procedural | **Working** on GitHub Pages |
+| Image Studio → Generate UI | **Working** |
+| SSTV handoff manifest | **Working** |
+| Self-hosted gateway (synthetic or upstream) | **Working** when you deploy `services/generation-gateway` |
+| Hosted multi-tenant cloud | Not provided |
+
+Docs: [IMAGE_GEN_AUDIT.md](docs/IMAGE_GEN_AUDIT.md) · [IMAGE_GEN_ARCHITECTURE.md](docs/IMAGE_GEN_ARCHITECTURE.md) · [IMAGE_GEN_SETUP.md](docs/IMAGE_GEN_SETUP.md) · [IMAGE_GEN_API.md](docs/IMAGE_GEN_API.md) · [IMAGE_GENERATION.md](docs/IMAGE_GENERATION.md)
+
+```bash
+# Optional remote boundary (separate from Pages)
+cd services/generation-gateway
+export CORS_ORIGINS=https://thebabeldragon.github.io,http://127.0.0.1:5500
+node server.js
+# then in the browser: localStorage.setItem('babelcodec.gen.gatewayUrl', 'http://127.0.0.1:8787')
+```
 
 ## Consumer imports
 
@@ -69,71 +90,9 @@ import {
   awaitJob,
   registerProvider,
   createProceduralProvider,
+  getGatewayConfig,
 } from 'babelcodec/media/generation';
-import {
-  createImageToSstvManifest,
-  exportSstvHandoff,
-  validateMediaJobManifest,
-} from './src/media/integrations/index.js';
 ```
-
-## Image generation
-
-Provider-independent pipeline with optional TPU assist:
-
-- **Procedural** provider — seed-driven offline fBm / Truchet / Gray-Scott (byte-identical for same prompt+seed)
-- Mock provider for offline / CI solid-color placeholders
-- Explicit TPU backend registration (never inferred from browser APIs)
-- Job lifecycle, provenance (digest + params), Image Studio ingestion, SSTV handoff
-
-See [docs/IMAGE_GENERATION.md](docs/IMAGE_GENERATION.md), [docs/GENERATION_PROVIDERS.md](docs/GENERATION_PROVIDERS.md), [docs/GENERATION_SECURITY.md](docs/GENERATION_SECURITY.md).
-
-## Signal Processor integration
-
-File-based contract only (`contract_version: 1`). No shared origin or runtime module dependency.
-
-1. Generate or import an image in BabelCodec
-2. **Export SSTV handoff** → PNG + `.job.json`
-3. In [Signal Processor](https://github.com/TheBabelDragon/signal-processor) SSTV panel: load image → encode Martin M1 or Robot 36 → WAV
-4. Decode Martin M1 WAV → reconstructed PNG → re-import to BabelCodec Inspect if desired
-
-Schema: [schemas/media/signal-processor-job.v1.schema.json](schemas/media/signal-processor-job.v1.schema.json)  
-Docs: [docs/integrations/SIGNAL_PROCESSOR.md](docs/integrations/SIGNAL_PROCESSOR.md)
-
-## Development
-
-```bash
-npm test
-npm run test:text
-npm run test:media
-npm run test:rust      # cargo test -p unicode-core
-npm run build:wasm
-npm run build
-npm run validate
-```
-
-## Documentation
-
-- [Unicode Foundation](docs/UNICODE_FOUNDATION.md)
-- [Canonical Representation](docs/CANONICAL_REPRESENTATION.md)
-- [Morse Blocks](docs/MORSE_BLOCKS.md)
-- [Hebrew Processing](docs/HEBREW_PROCESSING.md)
-- [Script Adapters](docs/SCRIPT_ADAPTERS.md)
-- [API](docs/API.md)
-- [SHA-256 Engine](docs/SHA256_ENGINE.md)
-- [Computer Architecture](docs/COMPUTER_ARCHITECTURE.md)
-- [Security](docs/SECURITY.md)
-- [HEIF / HEIC Decoder](docs/HEIF_DECODER.md)
-- [Image Studio](docs/IMAGE_STUDIO.md)
-- [Image Generation](docs/IMAGE_GENERATION.md)
-- [Generation Security](docs/GENERATION_SECURITY.md)
-- [TPU Backends](docs/TPU_BACKENDS.md)
-- [Generation Providers](docs/GENERATION_PROVIDERS.md)
-- [Signal Processor integration](docs/integrations/SIGNAL_PROCESSOR.md)
-
-## Security
-
-All core computation is local. No network, no telemetry, no upload of messages by default. Remote image providers are opt-in via explicit registration and must use a gateway you control — never embed API keys in the client. See [docs/SECURITY.md](docs/SECURITY.md) and [docs/GENERATION_SECURITY.md](docs/GENERATION_SECURITY.md).
 
 ## License
 
