@@ -1,9 +1,6 @@
 /**
  * Image Studio — Create · Convert · Inspect · Batch · Generate
- * Extends Media Lab; offline Canvas/SVG; HEIF via existing structural decoder.
- * Generation pipeline is optional and offline-first (mock provider by default).
- * Suite handoff via shared asset registry + onNavigate/onBytes.
- * Local edit ops on Convert (no network).
+ * Panel visibility: setMode always toggles .active in sync with hidden.
  */
 
 import {
@@ -54,7 +51,7 @@ export function createMediaLab(root, options = {}) {
   const onNavigate = options.onNavigate || (() => {});
 
   /** @type {'create'|'convert'|'inspect'|'batch'|'generate'} */
-  let mode = 'convert';
+  let mode = 'create';
   /** @type {Uint8Array|null} */
   let sourceBytes = null;
   let sourceName = '';
@@ -69,6 +66,10 @@ export function createMediaLab(root, options = {}) {
   /** @type {HTMLCanvasElement|null} */
   let createCanvas = null;
   let generateApi = null;
+  let wInput, hInput, bgInput, objList;
+  let convertPreview, convertInfo, qualityInput, formatSelect;
+  let inspectMeta, inspectBoxes;
+  let batchListEl, batchFormat, batchQuality;
 
   root.textContent = '';
   root.classList.add('media-lab', 'image-studio');
@@ -101,7 +102,7 @@ export function createMediaLab(root, options = {}) {
 
   const statusBar = el('div', 'media-status');
   statusBar.setAttribute('role', 'status');
-  statusBar.textContent = 'Image Studio ready.';
+  statusBar.textContent = 'Image Studio initializing…';
 
   shell.append(
     modeNav,
@@ -125,7 +126,7 @@ export function createMediaLab(root, options = {}) {
     notifyBytes,
     onNavigate,
   });
-  setMode('convert');
+  setMode('create');
 
   function el(tag, cls) {
     const n = document.createElement(tag);
@@ -143,14 +144,38 @@ export function createMediaLab(root, options = {}) {
     onDiagnostic(msg);
   }
   function setMode(id) {
+    if (!panels[id]) {
+      setStatus(`Image Studio: unknown mode "${id}"`);
+      return;
+    }
     mode = id;
     for (const [k, p] of Object.entries(panels)) {
-      p.hidden = k !== id;
-      modeBtns[k]?.classList.toggle('active', k === id);
+      const selected = k === id;
+      p.hidden = !selected;
+      p.classList.toggle('active', selected);
+      modeBtns[k]?.classList.toggle('active', selected);
     }
     if (id === 'create') redrawCreate();
     if (id === 'inspect') refreshInspect();
     if (id === 'generate' && generateApi?.refresh) generateApi.refresh();
+
+    const activePanel = panels[id];
+    const activeCount = Object.values(panels).filter((p) => p.classList.contains('active')).length;
+    if (!activePanel || activePanel.hidden || activeCount !== 1) {
+      setStatus('Image Studio initialization error: workspace panel not visible');
+      return;
+    }
+    if (id === 'create') {
+      setStatus(`Create workspace ready — ${scene.width} × ${scene.height} canvas`);
+    } else if (id === 'convert') {
+      setStatus('Convert workspace ready — import, local edit, export');
+    } else if (id === 'inspect') {
+      setStatus('Inspect workspace ready');
+    } else if (id === 'batch') {
+      setStatus('Batch workspace ready');
+    } else if (id === 'generate') {
+      setStatus('Generate workspace ready — offline providers available');
+    }
   }
 
   function revokePreview() {
@@ -174,7 +199,6 @@ export function createMediaLab(root, options = {}) {
     }
   }
 
-  let wInput, hInput, bgInput, objList;
   function buildCreate(panel) {
     const toolbar = el('div', 'studio-toolbar');
     const presets = el('div', 'studio-presets');
@@ -302,7 +326,6 @@ export function createMediaLab(root, options = {}) {
     }
   }
 
-  let convertPreview, convertInfo, qualityInput, formatSelect;
   function buildConvert(panel) {
     const drop = el('div', 'studio-dropzone');
     drop.textContent = 'Drop image or click to open (PNG/JPEG/WebP/GIF/BMP/HEIF)';
@@ -559,7 +582,6 @@ export function createMediaLab(root, options = {}) {
     return 'png';
   }
 
-  let inspectMeta, inspectBoxes;
   function buildInspect(panel) {
     const jump = btn('Open bytes in Hex Inspector', 'studio-btn');
     jump.addEventListener('click', () => openInHexInspector(onNavigate, onBytes, sourceBytes));
@@ -592,7 +614,6 @@ export function createMediaLab(root, options = {}) {
     }
   }
 
-  let batchListEl, batchFormat, batchQuality;
   function buildBatch(panel) {
     const drop = el('div', 'studio-dropzone');
     drop.textContent = 'Drop multiple images for batch convert';
@@ -730,5 +751,13 @@ export function createMediaLab(root, options = {}) {
     setMode,
     getMode: () => mode,
     getBytes: () => sourceBytes,
+    getWorkspaceState() {
+      return {
+        mode,
+        activePanel: panels[mode] || null,
+        panels: { ...panels },
+        modeButtons: { ...modeBtns },
+      };
+    },
   };
 }
