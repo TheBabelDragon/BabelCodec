@@ -36,6 +36,7 @@ jobs:
         run: |
           cd rust
           cargo generate-lockfile
+          ls -la
 
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli --locked
@@ -46,8 +47,21 @@ jobs:
           cargo fmt --all
           cargo fmt --all -- --check
 
+      - name: Cargo check (diagnose)
+        run: |
+          cd rust
+          cargo check -p unicode-core 2>&1 | tee /tmp/check.log
+          echo "--- check exit ---"
+
       - name: Cargo test (native)
-        run: cd rust && cargo test -p unicode-core -- --nocapture
+        run: |
+          cd rust
+          set +e
+          cargo test -p unicode-core -- --nocapture 2>&1 | tee /tmp/test.log
+          STATUS=${PIPESTATUS[0]}
+          echo "=== test log tail ==="
+          tail -100 /tmp/test.log
+          exit $STATUS
 
       - name: Build WASM package
         run: |
