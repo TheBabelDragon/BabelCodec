@@ -92,7 +92,63 @@ import {
   createProceduralProvider,
   getGatewayConfig,
 } from 'babelcodec/media/generation';
+import {
+  createImageToSstvManifest,
+  exportSstvHandoff,
+  validateMediaJobManifest,
+} from './src/media/integrations/index.js';
 ```
+
+## Signal Processor integration
+
+File-based contract only (`contract_version: 1`). No shared origin or runtime module dependency.
+
+1. Generate or import an image in BabelCodec
+2. **Export SSTV handoff** → PNG + `.job.json`
+3. In [Signal Processor](https://github.com/TheBabelDragon/signal-processor) SSTV panel: load image → encode Martin M1 or Robot 36 → WAV
+4. Decode Martin M1 WAV → reconstructed PNG → re-import to BabelCodec Inspect if desired
+
+Schema: [schemas/media/signal-processor-job.v1.schema.json](schemas/media/signal-processor-job.v1.schema.json)  
+Docs: [docs/integrations/SIGNAL_PROCESSOR.md](docs/integrations/SIGNAL_PROCESSOR.md)
+
+## Development
+
+```bash
+npm test
+npm run test:text
+npm run test:media
+npm run test:rust      # cargo test -p unicode-core
+npm run build:wasm
+npm run build
+npm run validate
+```
+
+## Documentation
+
+- [Unicode Foundation](docs/UNICODE_FOUNDATION.md)
+- [Canonical Representation](docs/CANONICAL_REPRESENTATION.md)
+- [Morse Blocks](docs/MORSE_BLOCKS.md)
+- [Hebrew Processing](docs/HEBREW_PROCESSING.md)
+- [Script Adapters](docs/SCRIPT_ADAPTERS.md)
+- [API](docs/API.md)
+- [SHA-256 Engine](docs/SHA256_ENGINE.md)
+- [Computer Architecture](docs/COMPUTER_ARCHITECTURE.md)
+- [Security](docs/SECURITY.md)
+- [HEIF / HEIC Decoder](docs/HEIF_DECODER.md)
+- [Image Studio](docs/IMAGE_STUDIO.md)
+- [Image Generation](docs/IMAGE_GENERATION.md)
+- [Image Gen Audit](docs/IMAGE_GEN_AUDIT.md)
+- [Image Gen Setup](docs/IMAGE_GEN_SETUP.md)
+- [Image Gen Architecture](docs/IMAGE_GEN_ARCHITECTURE.md)
+- [Image Gen API](docs/IMAGE_GEN_API.md)
+- [Generation Security](docs/GENERATION_SECURITY.md)
+- [TPU Backends](docs/TPU_BACKENDS.md)
+- [Generation Providers](docs/GENERATION_PROVIDERS.md)
+- [Signal Processor integration](docs/integrations/SIGNAL_PROCESSOR.md)
+
+## Security
+
+All core computation is local. No network, no telemetry, no upload of messages by default. Remote image providers are opt-in via explicit registration and must use a gateway you control — never embed API keys in the client. See [docs/SECURITY.md](docs/SECURITY.md) and [docs/GENERATION_SECURITY.md](docs/GENERATION_SECURITY.md).
 
 ## License
 
