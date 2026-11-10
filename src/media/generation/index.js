@@ -51,6 +51,14 @@ export {
 } from './providers/procedural.js';
 
 export {
+  createGatewayProvider,
+  getGatewayConfig,
+  setGatewayConfig,
+  GATEWAY_PROVIDER_ID,
+  GATEWAY_PROVIDER_VERSION,
+} from './providers/gateway.js';
+
+export {
   submitGeneration,
   awaitJob,
   cancelGeneration,
@@ -63,11 +71,13 @@ export { putJob, clearJobs } from './job-store.js';
 
 import { createMockProvider } from './providers/mock.js';
 import { createProceduralProvider } from './providers/procedural.js';
+import { createGatewayProvider, getGatewayConfig } from './providers/gateway.js';
 import { registerUnavailableTpuSentinel, listTpuBackendIds } from './capabilities.js';
 import { listProviderIds } from './providers/registry.js';
 
 /**
- * Ensure offline defaults: mock + procedural providers + honest "no TPU" sentinel.
+ * Ensure offline defaults: mock + procedural.
+ * Registers gateway provider only when a runtime gateway URL is configured.
  * Safe to call multiple times.
  */
 export function ensureGenerationDefaults() {
@@ -76,6 +86,10 @@ export function ensureGenerationDefaults() {
   }
   if (!listProviderIds().includes('procedural')) {
     createProceduralProvider({ autoRegister: true });
+  }
+  const gw = getGatewayConfig();
+  if (gw.configured && !listProviderIds().includes('gateway')) {
+    createGatewayProvider({ autoRegister: true });
   }
   if (!listTpuBackendIds().includes('none')) {
     registerUnavailableTpuSentinel();

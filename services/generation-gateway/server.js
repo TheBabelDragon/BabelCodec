@@ -1,19 +1,11 @@
 /**
- * BabelCodec Generation Gateway
- * Zero npm runtime dependencies. Node 18+.
- *
- * - Credentials only via environment
- * - CORS allowlist
- * - Rate limiting (per IP)
- * - Prompt / dimension validation
- * - No open proxy / arbitrary URL fetch from clients
- * - Synthetic PNG mode when UPSTREAM_URL is unset
+ * BabelCodec Generation Gateway — Node 18+, zero runtime deps.
+ * Secrets only via environment. Not an open proxy.
  */
 
 import http from 'node:http';
 import { createHash } from 'node:crypto';
-import { URL } from 'node:url';
-import { pathToFileURL } from 'node:url';
+import { URL, pathToFileURL } from 'node:url';
 
 const PORT = Number(process.env.PORT || 8787);
 const CORS_ORIGINS = String(process.env.CORS_ORIGINS || 'http://127.0.0.1:5500,http://localhost:5500')
@@ -93,7 +85,6 @@ function checkAuth(req) {
   return Boolean(m && m[1] === GATEWAY_TOKEN);
 }
 
-/** Deterministic tiny RGB PNG (no deps) for synthetic mode. */
 export function syntheticPng(prompt, width, height, seed) {
   const w = Math.max(1, Math.min(MAX_DIMENSION, width | 0));
   const h = Math.max(1, Math.min(MAX_DIMENSION, height | 0));
@@ -125,25 +116,23 @@ export function syntheticPng(prompt, width, height, seed) {
     return (c ^ 0xffffffff) >>> 0;
   }
   function u32(n) {
-    const b = Buffer.alloc(4);
-    b.writeUInt32BE(n >>> 0, 0);
-    return b;
+    const buf = Buffer.alloc(4);
+    buf.writeUInt32BE(n >>> 0, 0);
+    return buf;
   }
   function chunk(type, data) {
     const typeB = Buffer.from(type, 'ascii');
-    const len = u32(data.length);
     const body = Buffer.concat([typeB, data]);
-    const crc = u32(crc32(body));
-    return Buffer.concat([len, body, crc]);
+    return Buffer.concat([u32(data.length), body, u32(crc32(body))]);
   }
   function adler32(data) {
     let a = 1;
-    let b = 0;
+    let b0 = 0;
     for (let i = 0; i < data.length; i++) {
       a = (a + data[i]) % 65521;
-      b = (b + a) % 65521;
+      b0 = (b0 + a) % 65521;
     }
-    return ((b << 16) | a) >>> 0;
+    return ((b0 << 16) | a) >>> 0;
   }
 
   const blocks = [];
@@ -161,17 +150,13 @@ export function syntheticPng(prompt, width, height, seed) {
     offset += len;
   }
   const zlib = Buffer.concat([Buffer.from([0x78, 0x01]), ...blocks, u32(adler32(raw))]);
-
   const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
   const ihdrData = Buffer.alloc(13);
   ihdrData.writeUInt32BE(w, 0);
   ihdrData.writeUInt32BE(h, 4);
   ihdrData[8] = 8;
   ihdrData[9] = 2;
-  const ihdr = chunk('IHDR', ihdrData);
-  const idat = chunk('IDAT', zlib);
-  const iend = chunk('IEND', Buffer.alloc(0));
-  return Buffer.concat([signature, ihdr, idat, iend]);
+  return Buffer.concat([signature, chunk('IHDR', ihdrData), chunk('IDAT', zlib), chunk('IEND', Buffer.alloc(0))]);
 }
 
 async function upstreamGenerate(body) {
@@ -284,12 +269,9 @@ export function createServer() {
         const prompt = String(body.prompt);
         const seed = body.seed != null ? String(body.seed) : '';
         const generationId = createHash('sha256')
-          .update(`${prompt}\n${seed}\n${width}x${h}\n${Date.now()}`)
+          .update(`${prompt}\n${seed}\n${width}x${height}\n${Date.now()}`)
           .digest('hex')
           .slice(0, 16);
-
-        // fix typo - use height not h
-        void height;
 
         let buf;
         let ctype = 'image/png';
@@ -333,8 +315,7 @@ const isMain =
   process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
 
 if (isMain) {
-  const server = createServer();
-  server.listen(PORT, () => {
+  createServer().listen(PORT, () => {
     // eslint-disable-next-line no-console
     console.log(
       `BabelCodec generation gateway on :${PORT} mode=${UPSTREAM_URL ? 'upstream' : 'synthetic'} cors=${CORS_ORIGINS.join('|')}`,
