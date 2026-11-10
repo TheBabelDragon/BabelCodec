@@ -41,13 +41,21 @@ jobs:
           cargo fmt --all
           cargo fmt --all -- --check
 
+      - name: Cargo build (diagnose)
+        run: |
+          cd rust
+          cargo build -p unicode-core -v
+
       - name: Cargo test (native)
-        run: cd rust && cargo test -p unicode-core --lib -- --nocapture
+        id: cargo_test
+        run: |
+          cd rust
+          cargo test -p unicode-core --lib -- --nocapture
 
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli --locked
 
-      - name: Build WASM package
+      - name: Build WASM package (required)
         run: |
           cd rust
           cargo build --release --target wasm32-unknown-unknown -p unicode-core
