@@ -1,0 +1,25 @@
+{
+  "schema": "signal.observation.v1",
+  "event_id": "obs-golden-1",
+  "source_system": "signal-processor",
+  "source_node_id": "node-a",
+  "source_sequence": 1,
+  "source_timestamp": "2026-01-01T00:00:00.000Z",
+  "ingestion_timestamp": "2026-01-01T00:00:00.050Z",
+  "clock_domain": "wall_utc",
+  "observation_type": "acoustic.tone",
+  "features": [
+    {
+      "feature_id": "acoustic.frequency_hz",
+      "name": "frequency",
+      "type": "float64",
+      "unit": "Hz",
+      "value": 440,
+      "extraction_method": "golden"
+    }
+  ],
+  "provenance": {
+    "fixture": "golden"
+  },
+  "correlation_id": "corr-golden-1"
+}
