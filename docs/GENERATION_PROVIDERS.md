@@ -6,6 +6,7 @@
 |----|---------|-------|
 | `mock` | No | Deterministic solid-color PNG; CI and offline demos |
 | `procedural` | No | Seed-driven real images (fBm, Truchet, Gray-Scott); byte-identical for same prompt+seed |
+| `gateway` | Yes | Optional remote adapter; registered only when a gateway URL is configured at runtime |
 
 ## Procedural (`procedural`) — v0.11.0
 
@@ -38,6 +39,25 @@ const img = await generateProceduralImage({
   height: 256,
 });
 ```
+
+## Gateway (`gateway`) — optional remote
+
+Implemented in `src/media/generation/providers/gateway.js` against `services/generation-gateway`.
+
+- **No cloud API keys in the browser.** Only a gateway base URL (and optional lab bearer) from runtime config.
+- **Config sources:** `window.BabelCodecGenConfig.gatewayUrl` or `localStorage['babelcodec.gen.gatewayUrl']`.
+- **Registration:** `ensureGenerationDefaults()` registers `gateway` only when a URL is configured.
+- **Capabilities:** `GET {url}/v1/capabilities` — reports `available: false` with status `unconfigured` / `unreachable` when appropriate.
+- **Generate:** `POST {url}/v1/generate` → image bytes; size-capped client-side (12 MiB).
+
+```js
+import { getGatewayConfig, setGatewayConfig, createGatewayProvider } from 'babelcodec/media/generation';
+
+setGatewayConfig({ url: 'http://127.0.0.1:8787' });
+createGatewayProvider(); // or ensureGenerationDefaults() after setting URL
+```
+
+Deploy and environment variables: [IMAGE_GEN_SETUP.md](./IMAGE_GEN_SETUP.md). HTTP contract: [IMAGE_GEN_API.md](./IMAGE_GEN_API.md).
 
 ## Contract
 
@@ -72,34 +92,11 @@ Register with `registerProvider(provider)` before opening Image Studio Generate,
 
 **Offline only (default):** mock + procedural; no configuration required.
 
-**Remote via gateway (sketch):**
+**Remote via shipped gateway client:**
 
 ```js
-registerProvider({
-  id: 'gateway',
-  displayName: 'Lab Gateway',
-  requiresNetwork: true,
-  async generate(request, { signal, onProgress }) {
-    const res = await fetch('/api/generate', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        prompt: request.prompt,
-        width: request.width,
-        height: request.height,
-      }),
-      signal,
-    });
-    if (!res.ok) throw new Error('gateway error ' + res.status);
-    const buf = new Uint8Array(await res.arrayBuffer());
-    return {
-      results: [{
-        variantIndex: 0,
-        asset: { bytes: buf, mimeType: res.headers.get('content-type') || 'image/png' },
-      }],
-    };
-  },
-});
+localStorage.setItem('babelcodec.gen.gatewayUrl', 'https://gen.example.com');
+// reload app → ensureGenerationDefaults() registers gateway
 ```
 
 Never place provider API keys in this file or in any client bundle.

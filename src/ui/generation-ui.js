@@ -16,17 +16,12 @@ import {
   SSTV_PRESETS,
 } from '../media/generation/index.js';
 import { exportSstvHandoff } from '../media/integrations/index.js';
+import { describeGatewayStatus, saveGatewayUrl } from './generation-status.js';
 
 /**
  * Build the Generate panel into `panel`.
  * @param {HTMLElement} panel
- * @param {{
- *   el: Function,
- *   btn: Function,
- *   setStatus: Function,
- *   notifyBytes: Function,
- *   onNavigate: Function,
- * }} ctx
+ * @param {{ el: Function, btn: Function, setStatus: Function, notifyBytes: Function, onNavigate: Function }} ctx
  */
 export function buildGeneratePanel(panel, ctx) {
   const { el, btn, setStatus, notifyBytes } = ctx;
@@ -37,6 +32,8 @@ export function buildGeneratePanel(panel, ctx) {
   let activeJobId = null;
   /** @type {string[]} */
   let galleryUrls = [];
+  /** @type {object|null} */
+  let lastRequest = null;
 
   const layout = el('div', 'gen-layout');
   const controls = el('div', 'gen-controls');
@@ -61,6 +58,18 @@ export function buildGeneratePanel(panel, ctx) {
 
   const tpuStatus = el('div', 'gen-tpu-status');
   tpuStatus.textContent = 'TPU: checking…';
+
+  const configBanner = el('div', 'gen-config-banner');
+  const st0 = describeGatewayStatus();
+  configBanner.className = st0.className;
+  configBanner.textContent = st0.text;
+  const gwUrlInput = el('input', 'studio-input');
+  gwUrlInput.type = 'url';
+  gwUrlInput.placeholder = 'Gateway URL (optional) — https://…';
+  const gwSave = btn('Save gateway', 'studio-btn');
+  const gwClear = btn('Clear gateway', 'studio-btn');
+  const gwRow = el('div', 'gen-gw-row');
+  gwRow.append(gwSave, gwClear);
 
   const dimRow = el('div', 'gen-dim-row');
   const wInput = numInput(512);
@@ -148,6 +157,9 @@ export function buildGeneratePanel(panel, ctx) {
   detailsPanel.textContent = 'Job details appear after generate.';
 
   controls.append(
+    configBanner,
+    field('Gateway URL', gwUrlInput),
+    gwRow,
     promptLabel,
     promptArea,
     negLabel,
@@ -175,12 +187,16 @@ export function buildGeneratePanel(panel, ctx) {
   const galleryActions = el('div', 'gen-gallery-actions');
   const sendBtn = btn('Send to Image Studio', 'studio-btn');
   const downloadBtn = btn('Download', 'studio-btn');
+  const inspectBtn = btn('Inspect full size', 'studio-btn');
+  const regenBtn = btn('Regenerate', 'studio-btn');
   const sstvBtn = btn('Export SSTV handoff', 'studio-btn');
   sendBtn.disabled = true;
   downloadBtn.disabled = true;
+  inspectBtn.disabled = true;
+  regenBtn.disabled = true;
   sstvBtn.disabled = true;
   sstvBtn.title = 'Download PNG + Signal Processor contract v1 JSON (file-based handoff)';
-  galleryActions.append(sendBtn, downloadBtn, sstvBtn);
+  galleryActions.append(sendBtn, downloadBtn, inspectBtn, regenBtn, sstvBtn);
 
   previewCol.append(previewFrame, gallery, galleryActions);
 
@@ -189,8 +205,17 @@ export function buildGeneratePanel(panel, ctx) {
   const histList = el('div', 'gen-history');
   sideCol.append(histTitle, histList);
 
+  const lightbox = el('div', 'gen-lightbox');
+  lightbox.hidden = true;
+  const lightboxImg = el('img', 'gen-lightbox-img');
+  lightboxImg.alt = 'Full size';
+  const lightboxClose = btn('Close', 'studio-btn gen-lightbox-close');
+  lightbox.append(lightboxClose, lightboxImg);
+  lightbox.addEventListener('click', (ev) => {
+    if (ev.target === lightbox || ev.target === lightboxClose) lightbox.hidden = true;
+  });
   layout.append(controls, previewCol, sideCol);
-  panel.appendChild(layout);
+  panel.append(layout, lightbox);
 
   async function refreshCapabilities() {
     const providers = await discoverProviderCapabilities();
@@ -208,11 +233,14 @@ export function buildGeneratePanel(panel, ctx) {
       o.textContent = 'Mock (offline)';
       providerSelect.appendChild(o);
     }
-    // Prefer procedural when present
     if ([...providerSelect.options].some((o) => o.value === 'procedural')) {
       providerSelect.value = 'procedural';
     }
     await refreshModels();
+
+    const st = describeGatewayStatus();
+    configBanner.className = st.className;
+    configBanner.textContent = st.text;
 
     const tpu = await discoverTpuCapabilities();
     const available = tpu.filter((c) => c.available);
@@ -260,11 +288,19 @@ export function buildGeneratePanel(panel, ctx) {
       `providerVersion: ${job.provenance?.providerVersion || meta.providerVersion || '—'}`,
     ];
     const params = job.provenance?.params || meta.params;
-    if (params) {
-      lines.push('params: ' + JSON.stringify(params, null, 0));
-    }
+    if (params) lines.push('params: ' + JSON.stringify(params, null, 0));
     detailsPanel.textContent = lines.join('\n');
   }
+
+  gwSave.addEventListener('click', () => {
+    saveGatewayUrl(gwUrlInput.value.trim());
+    refreshCapabilities().then(() => setStatus('Gateway settings updated'));
+  });
+  gwClear.addEventListener('click', () => {
+    gwUrlInput.value = '';
+    saveGatewayUrl('');
+    refreshCapabilities().then(() => setStatus('Gateway cleared — offline only'));
+  });
 
   generateBtn.addEventListener('click', async () => {
     const prompt = promptArea.value.trim();
@@ -277,27 +313,25 @@ export function buildGeneratePanel(panel, ctx) {
     setProgress(0.05, 'QUEUED');
 
     try {
-      const job = await submitGeneration(
-        {
-          prompt,
-          negativePrompt: negArea.value.trim() || undefined,
-          providerId: providerSelect.value || 'procedural',
-          modelId: modelSelect.value || undefined,
-          width: parseInt(wInput.value, 10) || 512,
-          height: parseInt(hInput.value, 10) || 512,
-          variants: parseInt(variantsInput.value, 10) || 1,
-          quality: parseFloat(qualityInput.value) || 0.92,
-          seed: seedInput.value.trim() || undefined,
-          useTpu: useTpuCheck.checked,
-          tpuBackendId: useTpuCheck.checked ? 'none' : undefined,
+      lastRequest = {
+        prompt,
+        negativePrompt: negArea.value.trim() || undefined,
+        providerId: providerSelect.value || 'procedural',
+        modelId: modelSelect.value || undefined,
+        width: parseInt(wInput.value, 10) || 512,
+        height: parseInt(hInput.value, 10) || 512,
+        variants: parseInt(variantsInput.value, 10) || 1,
+        quality: parseFloat(qualityInput.value) || 0.92,
+        seed: seedInput.value.trim() || undefined,
+        useTpu: useTpuCheck.checked,
+        tpuBackendId: useTpuCheck.checked ? 'none' : undefined,
+      };
+      const job = await submitGeneration(lastRequest, {
+        onProgress: (j) => {
+          setProgress(j.progress || 0, j.state);
+          activeJobId = j.jobId;
         },
-        {
-          onProgress: (j) => {
-            setProgress(j.progress || 0, j.state);
-            activeJobId = j.jobId;
-          },
-        },
-      );
+      });
       activeJobId = job.jobId;
       const done = await awaitJob(job.jobId);
       setProgress(done.progress || (done.state === JOB_STATES.COMPLETE ? 1 : 0), done.state);
@@ -352,6 +386,8 @@ export function buildGeneratePanel(panel, ctx) {
         };
         sendBtn.disabled = false;
         downloadBtn.disabled = false;
+        inspectBtn.disabled = false;
+        regenBtn.disabled = false;
         sstvBtn.disabled = false;
       });
       gallery.appendChild(thumb);
@@ -364,6 +400,8 @@ export function buildGeneratePanel(panel, ctx) {
         };
         sendBtn.disabled = false;
         downloadBtn.disabled = false;
+        inspectBtn.disabled = false;
+        regenBtn.disabled = false;
         sstvBtn.disabled = false;
         first = false;
       }
@@ -388,6 +426,30 @@ export function buildGeneratePanel(panel, ctx) {
     a.href = previewImg.src;
     a.download = 'babelcodec-generated.png';
     a.click();
+  });
+
+  function openLightbox() {
+    if (!previewImg.src) return;
+    lightboxImg.src = previewImg.src;
+    lightbox.hidden = false;
+  }
+  inspectBtn.addEventListener('click', openLightbox);
+  previewImg.addEventListener('click', openLightbox);
+
+  regenBtn.addEventListener('click', () => {
+    if (!lastRequest) {
+      setStatus('Nothing to regenerate yet');
+      return;
+    }
+    promptArea.value = lastRequest.prompt || '';
+    if (lastRequest.negativePrompt) negArea.value = lastRequest.negativePrompt;
+    else negArea.value = '';
+    if (lastRequest.providerId) providerSelect.value = lastRequest.providerId;
+    if (lastRequest.modelId) modelSelect.value = lastRequest.modelId;
+    if (lastRequest.width) wInput.value = String(lastRequest.width);
+    if (lastRequest.height) hInput.value = String(lastRequest.height);
+    if (lastRequest.seed != null) seedInput.value = String(lastRequest.seed);
+    generateBtn.click();
   });
 
   sstvBtn.addEventListener('click', async () => {
@@ -427,6 +489,13 @@ export function buildGeneratePanel(panel, ctx) {
         if (full?.results?.length) showResults(full.results);
         setProgress(full?.progress || 0, full?.state);
         showJobDetails(full);
+        if (full?.request) {
+          lastRequest = { ...full.request };
+          promptArea.value = full.request.prompt || '';
+          if (full.request.seed != null) seedInput.value = String(full.request.seed);
+          if (full.request.providerId) providerSelect.value = full.request.providerId;
+          regenBtn.disabled = false;
+        }
       });
       histList.appendChild(row);
     }
