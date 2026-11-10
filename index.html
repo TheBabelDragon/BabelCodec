@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#171a21" />
   <meta name="color-scheme" content="dark" />
   <meta name="description" content="BabelCodec — offline-first encoding, Unicode text lab, Morse, SHA-256 computer, educational CPU, Image Studio." />
   <title>BabelCodec — Byte & Symbolic Workbench</title>
@@ -13,35 +14,55 @@
 <body>
   <header class="app-header">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true">◈</span>
-      <div class="brand-text">
-        <strong>BabelCodec</strong>
-        <span class="brand-sub">byte · unicode · signal · image</span>
-      </div>
+      <span class="brand-name">BabelCodec</span>
+      <span class="brand-tag">encoding · unicode · morse · SHA-256 · computer · CPU · images</span>
     </div>
-    <nav class="app-nav" aria-label="Primary">
-      <button type="button" class="nav-tab" data-tab="converter">Converter</button>
-      <button type="button" class="nav-tab" data-tab="inspector">Hex</button>
-      <button type="button" class="nav-tab" data-tab="structure">Structure</button>
-      <button type="button" class="nav-tab" data-tab="logic">Logic Lab</button>
-      <button type="button" class="nav-tab" data-tab="text">Text Lab</button>
-      <button type="button" class="nav-tab" data-tab="computer">Computer Lab</button>
-      <button type="button" class="nav-tab" data-tab="cpu">CPU Lab</button>
-      <button type="button" class="nav-tab" data-tab="media">Image Studio</button>
+    <nav class="tab-nav" role="tablist" aria-label="Workbench views">
+      <button type="button" class="tab-btn active" data-tab="converter" role="tab" aria-selected="true">Converter</button>
+      <button type="button" class="tab-btn" data-tab="inspector" role="tab" aria-selected="false">Hex Inspector</button>
+      <button type="button" class="tab-btn" data-tab="structure" role="tab" aria-selected="false">Structure & Layout</button>
+      <button type="button" class="tab-btn" data-tab="logic" role="tab" aria-selected="false">Logic Lab</button>
+      <button type="button" class="tab-btn" data-tab="sha256" role="tab" aria-selected="false">SHA-256 Lab</button>
+      <button type="button" class="tab-btn" data-tab="computer" role="tab" aria-selected="false">Computer Lab</button>
+      <button type="button" class="tab-btn" data-tab="cpu" role="tab" aria-selected="false">CPU Lab</button>
+      <button type="button" class="tab-btn" data-tab="text" role="tab" aria-selected="false">Text Lab</button>
+      <button type="button" class="tab-btn" data-tab="media" role="tab" aria-selected="false">Image Studio</button>
     </nav>
+    <div class="header-actions">
+      <span id="file-meta" class="diag-meta"></span>
+      <button type="button" class="btn btn-ghost" id="btn-load" title="Load local file">Load file</button>
+      <input type="file" id="file-input" hidden />
+    </div>
   </header>
 
   <main class="app-main">
-    <section id="view-converter" class="view" hidden></section>
-    <section id="view-inspector" class="view" hidden></section>
-    <section id="view-structure" class="view" hidden></section>
-    <section id="view-logic" class="view" hidden></section>
-    <section id="view-text" class="view" hidden></section>
-    <section id="view-computer" class="view" hidden></section>
-    <section id="view-cpu" class="view" hidden></section>
-    <section id="view-media" class="view">
+    <div id="view-converter" class="view-panel" role="tabpanel">
+      <div id="converter-root"></div>
+    </div>
+    <div id="view-inspector" class="view-panel" role="tabpanel" hidden>
+      <div id="inspector-root"></div>
+    </div>
+    <div id="view-structure" class="view-panel" role="tabpanel" hidden>
+      <div id="structure-root"></div>
+    </div>
+    <div id="view-logic" class="view-panel" role="tabpanel" hidden>
+      <div id="logic-root"></div>
+    </div>
+    <div id="view-sha256" class="view-panel" role="tabpanel" hidden>
+      <div id="sha256-root"></div>
+    </div>
+    <div id="view-computer" class="view-panel" role="tabpanel" hidden>
+      <div id="computer-root"></div>
+    </div>
+    <div id="view-cpu" class="view-panel" role="tabpanel" hidden>
+      <div id="cpu-root"></div>
+    </div>
+    <div id="view-text" class="view-panel" role="tabpanel" hidden>
+      <div id="text-root"></div>
+    </div>
+    <div id="view-media" class="view-panel" role="tabpanel" hidden>
       <div id="media-root" class="media-root"></div>
-    </section>
+    </div>
   </main>
 
   <footer class="app-footer">
