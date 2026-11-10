@@ -32,6 +32,8 @@ export function buildGeneratePanel(panel, ctx) {
   let activeJobId = null;
   /** @type {string[]} */
   let galleryUrls = [];
+  /** @type {object|null} */
+  let lastRequest = null;
 
   const layout = el('div', 'gen-layout');
   const controls = el('div', 'gen-controls');
@@ -186,13 +188,15 @@ export function buildGeneratePanel(panel, ctx) {
   const sendBtn = btn('Send to Image Studio', 'studio-btn');
   const downloadBtn = btn('Download', 'studio-btn');
   const inspectBtn = btn('Inspect full size', 'studio-btn');
+  const regenBtn = btn('Regenerate', 'studio-btn');
   const sstvBtn = btn('Export SSTV handoff', 'studio-btn');
   sendBtn.disabled = true;
   downloadBtn.disabled = true;
   inspectBtn.disabled = true;
+  regenBtn.disabled = true;
   sstvBtn.disabled = true;
   sstvBtn.title = 'Download PNG + Signal Processor contract v1 JSON (file-based handoff)';
-  galleryActions.append(sendBtn, downloadBtn, inspectBtn, sstvBtn);
+  galleryActions.append(sendBtn, downloadBtn, inspectBtn, regenBtn, sstvBtn);
 
   previewCol.append(previewFrame, gallery, galleryActions);
 
@@ -309,27 +313,25 @@ export function buildGeneratePanel(panel, ctx) {
     setProgress(0.05, 'QUEUED');
 
     try {
-      const job = await submitGeneration(
-        {
-          prompt,
-          negativePrompt: negArea.value.trim() || undefined,
-          providerId: providerSelect.value || 'procedural',
-          modelId: modelSelect.value || undefined,
-          width: parseInt(wInput.value, 10) || 512,
-          height: parseInt(hInput.value, 10) || 512,
-          variants: parseInt(variantsInput.value, 10) || 1,
-          quality: parseFloat(qualityInput.value) || 0.92,
-          seed: seedInput.value.trim() || undefined,
-          useTpu: useTpuCheck.checked,
-          tpuBackendId: useTpuCheck.checked ? 'none' : undefined,
+      lastRequest = {
+        prompt,
+        negativePrompt: negArea.value.trim() || undefined,
+        providerId: providerSelect.value || 'procedural',
+        modelId: modelSelect.value || undefined,
+        width: parseInt(wInput.value, 10) || 512,
+        height: parseInt(hInput.value, 10) || 512,
+        variants: parseInt(variantsInput.value, 10) || 1,
+        quality: parseFloat(qualityInput.value) || 0.92,
+        seed: seedInput.value.trim() || undefined,
+        useTpu: useTpuCheck.checked,
+        tpuBackendId: useTpuCheck.checked ? 'none' : undefined,
+      };
+      const job = await submitGeneration(lastRequest, {
+        onProgress: (j) => {
+          setProgress(j.progress || 0, j.state);
+          activeJobId = j.jobId;
         },
-        {
-          onProgress: (j) => {
-            setProgress(j.progress || 0, j.state);
-            activeJobId = j.jobId;
-          },
-        },
-      );
+      });
       activeJobId = job.jobId;
       const done = await awaitJob(job.jobId);
       setProgress(done.progress || (done.state === JOB_STATES.COMPLETE ? 1 : 0), done.state);
@@ -385,6 +387,7 @@ export function buildGeneratePanel(panel, ctx) {
         sendBtn.disabled = false;
         downloadBtn.disabled = false;
         inspectBtn.disabled = false;
+        regenBtn.disabled = false;
         sstvBtn.disabled = false;
       });
       gallery.appendChild(thumb);
@@ -398,6 +401,7 @@ export function buildGeneratePanel(panel, ctx) {
         sendBtn.disabled = false;
         downloadBtn.disabled = false;
         inspectBtn.disabled = false;
+        regenBtn.disabled = false;
         sstvBtn.disabled = false;
         first = false;
       }
@@ -431,6 +435,22 @@ export function buildGeneratePanel(panel, ctx) {
   }
   inspectBtn.addEventListener('click', openLightbox);
   previewImg.addEventListener('click', openLightbox);
+
+  regenBtn.addEventListener('click', () => {
+    if (!lastRequest) {
+      setStatus('Nothing to regenerate yet');
+      return;
+    }
+    promptArea.value = lastRequest.prompt || '';
+    if (lastRequest.negativePrompt) negArea.value = lastRequest.negativePrompt;
+    else negArea.value = '';
+    if (lastRequest.providerId) providerSelect.value = lastRequest.providerId;
+    if (lastRequest.modelId) modelSelect.value = lastRequest.modelId;
+    if (lastRequest.width) wInput.value = String(lastRequest.width);
+    if (lastRequest.height) hInput.value = String(lastRequest.height);
+    if (lastRequest.seed != null) seedInput.value = String(lastRequest.seed);
+    generateBtn.click();
+  });
 
   sstvBtn.addEventListener('click', async () => {
     if (!lastBytes) return;
@@ -469,6 +489,13 @@ export function buildGeneratePanel(panel, ctx) {
         if (full?.results?.length) showResults(full.results);
         setProgress(full?.progress || 0, full?.state);
         showJobDetails(full);
+        if (full?.request) {
+          lastRequest = { ...full.request };
+          promptArea.value = full.request.prompt || '';
+          if (full.request.seed != null) seedInput.value = String(full.request.seed);
+          if (full.request.providerId) providerSelect.value = full.request.providerId;
+          regenBtn.disabled = false;
+        }
       });
       histList.appendChild(row);
     }
