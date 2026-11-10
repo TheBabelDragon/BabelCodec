@@ -11,7 +11,6 @@ authors = ["TheBabelDragon"]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# Pin upper bounds loosely but prefer known-good minors for CI stability
 unicode-ident = "1.0"
 unicode-normalization = "0.1.22"
 unicode-segmentation = "=1.11.0"
@@ -19,7 +18,8 @@ unicode-script = "0.5.5"
 serde = { version = "1.0", features = ["derive"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = "0.2"
+# Must match WASM_BINDGEN_VERSION / wasm-bindgen-cli in CI and scripts/build-wasm.js
+wasm-bindgen = "=0.2.130"
 serde-wasm-bindgen = "0.6"
 js-sys = "0.3"
 

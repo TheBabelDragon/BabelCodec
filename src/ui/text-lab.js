@@ -6,6 +6,11 @@ import {
   initializeUnicodeCore,
   toCanonical,
   serializeCanonical,
+  engineVersion,
+  getLoaderDiagnostics,
+  getHealthReport,
+  isUnicodeCoreReady,
+  resetUnicodeCoreInit,
 } from '../text/index.js?v=0.10.0';
 import { hebrewAdapter } from '../scripts/index.js?v=0.10.0';
 import {
@@ -23,6 +28,7 @@ function el(tag, attrs = {}, children = []) {
     if (k === 'className') node.className = v;
     else if (k === 'textContent') node.textContent = v;
     else if (k === 'value') node.value = v;
+    else if (k === 'disabled') node.disabled = !!v;
     else node.setAttribute(k, v);
   }
   for (const c of children) {
@@ -30,6 +36,37 @@ function el(tag, attrs = {}, children = []) {
     else if (c) node.appendChild(c);
   }
   return node;
+}
+
+function formatDiagPanel(err) {
+  const lines = [];
+  lines.push('Unicode Core WASM — initialization failed');
+  lines.push('');
+  if (err?.message) lines.push(String(err.message));
+  const d = getLoaderDiagnostics();
+  if (d?.probes?.length) {
+    lines.push('');
+    lines.push('Asset probes:');
+    for (const p of d.probes) {
+      const st = p.ok ? 'OK' : (p.error || `HTTP ${p.status}`);
+      lines.push(`  [${p.kind || 'asset'}] ${p.url} → ${st}`);
+    }
+  }
+  const h = getHealthReport();
+  if (h) {
+    lines.push('');
+    lines.push(`Health: ${h.ok ? 'ok' : 'failed'} engine=${h.engineVersion || 'n/a'}`);
+    if (h.checks) {
+      for (const c of h.checks) {
+        lines.push(`  ${c.name}: ${c.ok ? 'ok' : (c.error || 'fail')}`);
+      }
+    }
+  }
+  lines.push('');
+  lines.push('Build: npm run build:wasm');
+  lines.push('Deploy must serve pkg/unicode_core.js and pkg/unicode_core_bg.wasm');
+  lines.push('There is no JavaScript fallback for Unicode semantics.');
+  return lines.join('\n');
 }
 
 export function createTextLab(container, opts = {}) {
@@ -54,6 +91,19 @@ export function createTextLab(container, opts = {}) {
   });
   container.appendChild(status);
 
+  // NOT inspect-out — tests and layout query that for the main output panel only
+  const diagBox = el('pre', {
+    className: 'mono wasm-diag-panel',
+    textContent: '',
+  });
+  diagBox.style.display = 'none';
+  diagBox.style.whiteSpace = 'pre-wrap';
+  diagBox.style.wordBreak = 'break-word';
+  diagBox.style.maxHeight = '40vh';
+  diagBox.style.overflow = 'auto';
+  diagBox.style.fontSize = '12px';
+  container.appendChild(diagBox);
+
   const inputPanel = el('section', { className: 'panel lab-panel' });
   inputPanel.appendChild(el('div', { className: 'panel-title', textContent: 'Source text' }));
   const input = el('textarea', { className: 'mono', rows: '3', spellcheck: 'false' });
@@ -61,12 +111,16 @@ export function createTextLab(container, opts = {}) {
   inputPanel.appendChild(input);
 
   const ctrl = el('div', { className: 'btn-row' });
-  const btnCanon = el('button', { type: 'button', className: 'btn', textContent: 'Canonicalize', disabled: 'true' });
+  const btnCanon = el('button', { type: 'button', className: 'btn', textContent: 'Canonicalize' });
+  btnCanon.disabled = true;
   const btnHebrew = el('button', { type: 'button', className: 'btn', textContent: 'Hebrew parse' });
   const btnMorse = el('button', { type: 'button', className: 'btn', textContent: 'Morse encode' });
   const btnDecode = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Morse decode' });
-  const btnDigest = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Digest preview', disabled: 'true' });
-  ctrl.append(btnCanon, btnHebrew, btnMorse, btnDecode, btnDigest);
+  const btnDigest = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Digest preview' });
+  btnDigest.disabled = true;
+  const btnRetry = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Retry WASM' });
+  btnRetry.style.display = 'none';
+  ctrl.append(btnCanon, btnHebrew, btnMorse, btnDecode, btnDigest, btnRetry);
   inputPanel.appendChild(ctrl);
 
   const outPanel = el('section', { className: 'panel lab-panel' });
@@ -81,27 +135,52 @@ export function createTextLab(container, opts = {}) {
 
   let coreReady = false;
 
-  initializeUnicodeCore()
-    .then(() => {
-      coreReady = true;
-      status.textContent = 'Unicode Core ready (Rust WASM).';
-      btnCanon.disabled = false;
-      btnDigest.disabled = false;
-      out.textContent =
-        'Ready. Enter text above and choose an operation (Canonicalize, Hebrew parse, Morse, Digest).';
-      onDiagnostic('unicode-core initialized', 'ok');
-    })
-    .catch((err) => {
-      status.textContent = 'Unicode Core failed to load.';
-      out.textContent =
-        'ERROR: ' + (err?.message || err) +
-        '\n\nBuild the WASM package and ensure pkg/unicode_core.js is served.\n' +
-        'There is no JavaScript fallback implementation.';
-      onDiagnostic(String(err?.message || err), 'error');
-    });
+  function setReady(version) {
+    coreReady = true;
+    const ver = version || engineVersion() || 'unknown';
+    status.textContent = `Unicode Core READY · engine ${ver} (Rust WASM)`;
+    btnCanon.disabled = false;
+    btnDigest.disabled = false;
+    btnRetry.style.display = 'none';
+    diagBox.style.display = 'none';
+    out.textContent =
+      'Ready. Enter text above and choose an operation (Canonicalize, Hebrew parse, Morse, Digest).';
+    onDiagnostic(`unicode-core ready ${ver}`, 'ok');
+  }
+
+  function setFailed(err) {
+    coreReady = false;
+    status.textContent = 'Unicode Core FAILED — see diagnostics below';
+    btnCanon.disabled = true;
+    btnDigest.disabled = true;
+    btnRetry.style.display = '';
+    diagBox.style.display = 'block';
+    diagBox.textContent = formatDiagPanel(err);
+    out.textContent =
+      'Unicode operations unavailable until WASM loads.\n' +
+      'Hebrew parse and Morse (non-Unicode-core) still work.';
+    onDiagnostic(String(err?.message || err), 'error');
+  }
+
+  function boot() {
+    status.textContent = 'Initializing Unicode Core…';
+    initializeUnicodeCore()
+      .then(() => {
+        const h = getHealthReport();
+        setReady(h?.engineVersion);
+      })
+      .catch((err) => setFailed(err));
+  }
+
+  btnRetry.addEventListener('click', () => {
+    resetUnicodeCoreInit();
+    boot();
+  });
+
+  boot();
 
   btnCanon.addEventListener('click', async () => {
-    if (!coreReady) {
+    if (!coreReady || !isUnicodeCoreReady()) {
       out.textContent = 'Unicode Core not ready.';
       return;
     }
@@ -146,8 +225,8 @@ export function createTextLab(container, opts = {}) {
   });
 
   btnDigest.addEventListener('click', async () => {
-    if (!coreReady) {
-      out.textContent = 'Unicode Core not ready.';
+    if (!coreReady || !isUnicodeCoreReady()) {
+      out.textContent = 'Unicode Core not ready — digest requires canonicalization.';
       return;
     }
     try {

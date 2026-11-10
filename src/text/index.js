@@ -33,4 +33,10 @@ export {
   normalize,
   isXidIdentifier,
   engineVersion,
+  candidateJsUrls,
+  resolveProjectBase,
+  runHealthCheck,
+  getLoaderDiagnostics,
+  getHealthReport,
+  resetUnicodeCoreInit,
 } from './unicode-core-loader.js';
