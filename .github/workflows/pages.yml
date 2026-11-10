@@ -2,7 +2,7 @@ name: Test and Deploy
 
 on:
   push:
-    branches: [main, fix/commit-pkg-wasm-assets]
+    branches: [main, fix/wasm-loader-deploy-reliability]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -15,6 +15,9 @@ permissions:
 concurrency:
   group: pages-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  WASM_BINDGEN_VERSION: '0.2.100'
 
 jobs:
   test:
@@ -32,27 +35,27 @@ jobs:
           targets: wasm32-unknown-unknown
           components: rustfmt
 
-      - name: Generate Cargo.lock
-        run: cd rust && cargo generate-lockfile
+      - name: Generate Cargo.lock if missing
+        run: |
+          if [ ! -f rust/Cargo.lock ]; then
+            cd rust && cargo generate-lockfile
+          fi
 
       - name: Cargo test
         run: cd rust && cargo test -p unicode-core --lib -- --nocapture
 
-      - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli --locked
+      - name: Install wasm-bindgen-cli (pinned)
+        run: cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked --force
 
-      - name: Build WASM package
+      - name: Build WASM (npm run build:wasm)
         run: |
-          set -e
-          cd rust
-          cargo build --release --target wasm32-unknown-unknown -p unicode-core
-          wasm-bindgen --target web --out-dir ../pkg \
-            target/wasm32-unknown-unknown/release/unicode_core.wasm
-          ls -la ../pkg/
-          test -f ../pkg/unicode_core.js
-          test -f ../pkg/unicode_core_bg.wasm
-          # Ensure JS refers to local wasm (wasm-bindgen default)
-          head -c 200 ../pkg/unicode_core.js || true
+          set -euo pipefail
+          node scripts/build-wasm.js
+          test -s pkg/unicode_core.js
+          test -s pkg/unicode_core_bg.wasm
+          ls -la pkg/
+          # Pair integrity
+          grep -q unicode_core_bg.wasm pkg/unicode_core.js
 
       - name: Run Node tests
         run: |
@@ -79,6 +82,7 @@ jobs:
         with:
           name: unicode-core-wasm
           path: pkg/
+          if-no-files-found: error
 
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -90,27 +94,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Generate Cargo.lock
-        run: cd rust && cargo generate-lockfile
+      - name: Generate Cargo.lock if missing
+        run: |
+          if [ ! -f rust/Cargo.lock ]; then
+            cd rust && cargo generate-lockfile
+          fi
 
-      - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli --locked
+      - name: Install wasm-bindgen-cli (pinned)
+        run: cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked --force
 
       - name: Build WASM into pkg/ for Pages
         run: |
-          set -e
-          cd rust
-          cargo build --release --target wasm32-unknown-unknown -p unicode-core
-          wasm-bindgen --target web --out-dir ../pkg \
-            target/wasm32-unknown-unknown/release/unicode_core.wasm
-          test -f ../pkg/unicode_core.js
-          test -f ../pkg/unicode_core_bg.wasm
-          ls -la ../pkg/
+          set -euo pipefail
+          node scripts/build-wasm.js
+          test -s pkg/unicode_core.js
+          test -s pkg/unicode_core_bg.wasm
+          grep -q unicode_core_bg.wasm pkg/unicode_core.js
+          ls -la pkg/
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -123,3 +132,27 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Post-deploy smoke (public assets)
+        run: |
+          set -euo pipefail
+          BASE="https://thebabeldragon.github.io/BabelCodec"
+          echo "Waiting briefly for CDN…"
+          sleep 15
+          for i in 1 2 3 4 5 6; do
+            code_js=$(curl -s -o /tmp/uc.js -w "%{http_code}" "$BASE/pkg/unicode_core.js" || echo 000)
+            code_wasm=$(curl -s -o /tmp/uc.wasm -w "%{http_code}" "$BASE/pkg/unicode_core_bg.wasm" || echo 000)
+            echo "attempt $i js=$code_js wasm=$code_wasm"
+            if [ "$code_js" = "200" ] && [ "$code_wasm" = "200" ]; then
+              break
+            fi
+            sleep 10
+          done
+          test "$code_js" = "200"
+          test "$code_wasm" = "200"
+          # Not an HTML 404 page
+          head -c 20 /tmp/uc.js | grep -vq '<!'
+          # WASM magic \0asm
+          python3 -c "d=open('/tmp/uc.wasm','rb').read(4); assert d==b'\\x00asm', d"
+          grep -q unicode_core_bg.wasm /tmp/uc.js
+          echo "Post-deploy smoke OK"
