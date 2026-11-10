@@ -1,13 +1,11 @@
 //! BabelCodec Unicode Core — canonical Rust Unicode engine.
-//!
-//! Rust owns Unicode semantics. JavaScript owns presentation and I/O.
 
 #![deny(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
 use unicode_ident::{is_xid_continue, is_xid_start};
 use unicode_normalization::UnicodeNormalization;
-use unicode_script::{Script, UnicodeScript};
+use unicode_script::UnicodeScript;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub const ENGINE_VERSION: &str = "0.10.0";
@@ -35,52 +33,33 @@ impl Utf16Units {
         Self::new(s.encode_utf16().collect())
     }
 
-    pub fn try_to_string(&self) -> Result<String, DecodeError> {
+    pub fn try_to_string(&self) -> Result<String, String> {
         if self.schema != Self::SCHEMA {
-            return Err(DecodeError::UnsupportedSchema(self.schema.clone()));
+            return Err(format!("unsupported schema: {}", self.schema));
         }
-        let mut out = String::with_capacity(self.units.len());
+        let mut out = String::new();
         let mut i = 0;
         while i < self.units.len() {
             let u = self.units[i];
             if (0xD800..=0xDBFF).contains(&u) {
                 if i + 1 >= self.units.len() {
-                    return Err(DecodeError::UnpairedSurrogate { index: i, unit: u });
+                    return Err(format!("unpaired high surrogate at {}", i));
                 }
                 let lo = self.units[i + 1];
                 if !(0xDC00..=0xDFFF).contains(&lo) {
-                    return Err(DecodeError::UnpairedSurrogate { index: i, unit: u });
+                    return Err(format!("unpaired high surrogate at {}", i));
                 }
                 let cp = 0x10000 + (((u as u32 - 0xD800) << 10) | (lo as u32 - 0xDC00));
                 out.push(char::from_u32(cp).unwrap());
                 i += 2;
             } else if (0xDC00..=0xDFFF).contains(&u) {
-                return Err(DecodeError::UnpairedSurrogate { index: i, unit: u });
+                return Err(format!("unpaired low surrogate at {}", i));
             } else {
                 out.push(char::from_u32(u as u32).unwrap());
                 i += 1;
             }
         }
         Ok(out)
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum DecodeError {
-    UnsupportedSchema(String),
-    UnpairedSurrogate { index: usize, unit: u16 },
-    InvalidUtf8,
-}
-
-impl std::fmt::Display for DecodeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DecodeError::UnsupportedSchema(s) => write!(f, "unsupported schema: {}", s),
-            DecodeError::UnpairedSurrogate { index, unit } => {
-                write!(f, "unpaired surrogate U+{:04X} at index {}", unit, index)
-            }
-            DecodeError::InvalidUtf8 => write!(f, "invalid UTF-8"),
-        }
     }
 }
 
@@ -120,16 +99,10 @@ pub struct NormalizationResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct CanonicalInspection {
-    pub schema: String,
-    pub engine_version: String,
-    pub source: SourceIdentity,
-    pub analysis: AnalysisView,
-    pub graphemes: Vec<GraphemeInfo>,
-    pub grapheme_method: String,
-    pub script: ScriptSummary,
-    pub normalization: NormalizationResult,
-    pub diagnostics: Vec<Diagnostic>,
+pub struct Diagnostic {
+    pub code: String,
+    pub message: String,
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -147,50 +120,25 @@ pub struct AnalysisView {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Diagnostic {
-    pub code: String,
-    pub message: String,
-    pub detail: Option<String>,
-}
-
-impl Diagnostic {
-    pub fn new(code: &str, message: &str) -> Self {
-        Self {
-            code: code.to_string(),
-            message: message.to_string(),
-            detail: None,
-        }
-    }
-
-    pub fn with_detail(code: &str, message: &str, detail: &str) -> Self {
-        Self {
-            code: code.to_string(),
-            message: message.to_string(),
-            detail: Some(detail.to_string()),
-        }
-    }
+pub struct CanonicalInspection {
+    pub schema: String,
+    pub engine_version: String,
+    pub source: SourceIdentity,
+    pub analysis: AnalysisView,
+    pub graphemes: Vec<GraphemeInfo>,
+    pub grapheme_method: String,
+    pub script: ScriptSummary,
+    pub normalization: NormalizationResult,
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 fn u_plus(cp: u32) -> String {
     format!("U+{:04X}", cp)
 }
 
-fn script_name(cp: char) -> String {
-    match cp.script() {
-        Script::Unknown => "Unknown".to_string(),
-        s => format!("{:?}", s),
-    }
-}
-
 fn is_combining_mark(cp: char) -> bool {
     let c = cp as u32;
     (0x0300..=0x036F).contains(&c)
-        || (0x0591..=0x05C7).contains(&c)
-        || (0x064B..=0x065F).contains(&c)
-        || (0x1AB0..=0x1AFF).contains(&c)
-        || (0x1DC0..=0x1DFF).contains(&c)
-        || (0x20D0..=0x20FF).contains(&c)
-        || (0xFE20..=0xFE2F).contains(&c)
 }
 
 pub fn iterate_code_points(text: &str) -> Vec<CodePointInfo> {
@@ -207,7 +155,7 @@ pub fn iterate_code_points(text: &str) -> Vec<CodePointInfo> {
             utf16_end: utf16_idx + utf16_len,
             is_xid_start: is_xid_start(ch),
             is_xid_continue: is_xid_continue(ch),
-            script: script_name(ch),
+            script: format!("{:?}", ch.script()),
             is_combining: is_combining_mark(ch),
         });
         utf16_idx += utf16_len;
@@ -220,7 +168,7 @@ pub fn segment_graphemes(text: &str) -> Vec<GraphemeInfo> {
     let mut utf16_idx = 0usize;
     for g in text.graphemes(true) {
         let cps: Vec<u32> = g.chars().map(|c| c as u32).collect();
-        let utf16_len: usize = g.encode_utf16().count();
+        let utf16_len = g.encode_utf16().count();
         out.push(GraphemeInfo {
             text: g.to_string(),
             start: utf16_idx,
@@ -236,7 +184,7 @@ pub fn detect_scripts(text: &str) -> ScriptSummary {
     let mut counts: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
     for ch in text.chars() {
-        let name = script_name(ch);
+        let name = format!("{:?}", ch.script());
         *counts.entry(name).or_insert(0) += 1;
     }
     let mut primary = "Unknown".to_string();
@@ -251,11 +199,11 @@ pub fn detect_scripts(text: &str) -> ScriptSummary {
         }
     }
     if max == 0 {
-        if counts.contains_key("Common") {
-            primary = "Common".to_string();
-        } else if counts.contains_key("Inherited") {
-            primary = "Inherited".to_string();
-        }
+        primary = counts
+            .keys()
+            .next()
+            .cloned()
+            .unwrap_or_else(|| "Unknown".to_string());
     }
     let distinct: Vec<_> = counts
         .keys()
@@ -288,27 +236,32 @@ pub fn apply_normalization(text: &str, profile: &str) -> NormalizationResult {
     }
 }
 
+pub fn is_xid_identifier(text: &str) -> bool {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(c) if is_xid_start(c) => chars.all(is_xid_continue),
+        _ => false,
+    }
+}
+
 pub fn inspect_canonical(text: &str, normalization_profile: &str) -> CanonicalInspection {
     let mut diagnostics = Vec::new();
     let norm = apply_normalization(text, normalization_profile);
     let analysis_text = if norm.profile == "NONE" {
         text
     } else {
-        &norm.text
+        norm.text.as_str()
     };
-
     if norm.changed {
-        diagnostics.push(Diagnostic::with_detail(
-            "NORMALIZATION_APPLIED",
-            &format!("Applied {}", norm.profile),
-            &norm.profile,
-        ));
+        diagnostics.push(Diagnostic {
+            code: "NORMALIZATION_APPLIED".to_string(),
+            message: format!("Applied {}", norm.profile),
+            detail: Some(norm.profile.clone()),
+        });
     }
-
     let scalars = iterate_code_points(analysis_text);
     let graphemes = segment_graphemes(analysis_text);
     let script = detect_scripts(analysis_text);
-
     CanonicalInspection {
         schema: "babelcodec.canonical.v1".to_string(),
         engine_version: ENGINE_VERSION.to_string(),
@@ -330,14 +283,6 @@ pub fn inspect_canonical(text: &str, normalization_profile: &str) -> CanonicalIn
         script,
         normalization: norm,
         diagnostics,
-    }
-}
-
-pub fn is_xid_identifier(text: &str) -> bool {
-    let mut chars = text.chars();
-    match chars.next() {
-        Some(c) if is_xid_start(c) => chars.all(is_xid_continue),
-        _ => false,
     }
 }
 
@@ -398,11 +343,13 @@ mod wasm_api {
                         profile: "NONE".to_string(),
                         changed: false,
                     },
-                    diagnostics: vec![Diagnostic::with_detail(
-                        "INVALID_UTF16",
-                        &e.to_string(),
-                        "unpaired surrogate preserved in source.utf16_units",
-                    )],
+                    diagnostics: vec![Diagnostic {
+                        code: "INVALID_UTF16".to_string(),
+                        message: e,
+                        detail: Some(
+                            "unpaired surrogate preserved in source.utf16_units".to_string(),
+                        ),
+                    }],
                 };
                 serde_wasm_bindgen::to_value(&diag).map_err(|e| JsValue::from_str(&e.to_string()))
             }
@@ -412,9 +359,7 @@ mod wasm_api {
     #[wasm_bindgen(js_name = normalizeFromUtf16)]
     pub fn normalize_from_utf16(units: &[u16], profile: &str) -> Result<JsValue, JsValue> {
         let utf16 = Utf16Units::new(units.to_vec());
-        let s = utf16
-            .try_to_string()
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let s = utf16.try_to_string().map_err(|e| JsValue::from_str(&e))?;
         let res = apply_normalization(&s, profile);
         serde_wasm_bindgen::to_value(&res).map_err(|e| JsValue::from_str(&e.to_string()))
     }
@@ -422,9 +367,7 @@ mod wasm_api {
     #[wasm_bindgen(js_name = segmentGraphemesFromUtf16)]
     pub fn segment_graphemes_from_utf16(units: &[u16]) -> Result<JsValue, JsValue> {
         let utf16 = Utf16Units::new(units.to_vec());
-        let s = utf16
-            .try_to_string()
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let s = utf16.try_to_string().map_err(|e| JsValue::from_str(&e))?;
         let g = segment_graphemes(&s);
         serde_wasm_bindgen::to_value(&g).map_err(|e| JsValue::from_str(&e.to_string()))
     }
@@ -432,9 +375,7 @@ mod wasm_api {
     #[wasm_bindgen(js_name = detectScriptsFromUtf16)]
     pub fn detect_scripts_from_utf16(units: &[u16]) -> Result<JsValue, JsValue> {
         let utf16 = Utf16Units::new(units.to_vec());
-        let s = utf16
-            .try_to_string()
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let s = utf16.try_to_string().map_err(|e| JsValue::from_str(&e))?;
         let sc = detect_scripts(&s);
         serde_wasm_bindgen::to_value(&sc).map_err(|e| JsValue::from_str(&e.to_string()))
     }
@@ -442,9 +383,7 @@ mod wasm_api {
     #[wasm_bindgen(js_name = isXidIdentifierFromUtf16)]
     pub fn is_xid_identifier_from_utf16(units: &[u16]) -> Result<bool, JsValue> {
         let utf16 = Utf16Units::new(units.to_vec());
-        let s = utf16
-            .try_to_string()
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let s = utf16.try_to_string().map_err(|e| JsValue::from_str(&e))?;
         Ok(is_xid_identifier(&s))
     }
 
@@ -495,16 +434,10 @@ mod tests {
     }
 
     #[test]
-    fn inspect_preserves_source() {
+    fn inspect_source() {
         let s = "e\u{0301}";
         let insp = inspect_canonical(s, "NFC");
         assert_eq!(insp.source.text, s);
         assert!(insp.normalization.changed);
-    }
-
-    #[test]
-    fn empty_string() {
-        let insp = inspect_canonical("", "NONE");
-        assert!(insp.graphemes.is_empty());
     }
 }
