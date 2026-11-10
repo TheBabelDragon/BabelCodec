@@ -2,6 +2,7 @@
  * Image Studio — Create · Convert · Inspect · Batch · Generate
  * Extends Media Lab; offline Canvas/SVG; HEIF via existing structural decoder.
  * Generation pipeline is optional and offline-first (mock provider by default).
+ * Suite handoff via shared asset registry + onNavigate/onBytes.
  */
 
 import {
@@ -28,6 +29,13 @@ import {
   processQueue,
 } from '../media/studio/index.js';
 import { buildGeneratePanel } from './generation-ui.js';
+import {
+  openInHexInspector,
+  openInStructure,
+  openInConverter,
+  openInLogicLab,
+} from '../media/handoff.js';
+import { getDefaultRegistry } from '../media/assets/index.js';
 
 /**
  * @param {HTMLElement} root
@@ -95,7 +103,7 @@ export function createMediaLab(root, options = {}) {
     panels.inspect,
     panels.batch,
     panels.generate,
-    statusBar
+    statusBar,
   );
   root.appendChild(shell);
 
@@ -148,6 +156,15 @@ export function createMediaLab(root, options = {}) {
   function notifyBytes(bytes) {
     sourceBytes = bytes;
     onBytes(bytes);
+    if (bytes && bytes.length) {
+      getDefaultRegistry()
+        .createFromBytes(bytes, {
+          filename: sourceName || 'studio-asset.bin',
+          mimeType: 'application/octet-stream',
+          source: 'imported',
+        })
+        .catch(() => {});
+    }
   }
 
   let wInput, hInput, bgInput, objList;
@@ -330,10 +347,25 @@ export function createMediaLab(root, options = {}) {
     const clearBtn = btn('Clear', 'studio-btn');
     clearBtn.addEventListener('click', clearSource);
     const toInspect = btn('Open in Hex', 'studio-btn');
-    toInspect.addEventListener('click', () => onNavigate('inspector'));
+    toInspect.addEventListener('click', () => openInHexInspector(onNavigate, onBytes, sourceBytes));
+    const toStructure = btn('Inspect Structure', 'studio-btn');
+    toStructure.addEventListener('click', () => openInStructure(onNavigate, onBytes, sourceBytes));
+    const toConverter = btn('Open in Converter', 'studio-btn');
+    toConverter.addEventListener('click', () => openInConverter(onNavigate, onBytes, sourceBytes));
+    const toLogic = btn('Send to Logic Lab', 'studio-btn');
+    toLogic.addEventListener('click', () => openInLogicLab(onNavigate, onBytes, sourceBytes));
 
     const controls = el('div', 'studio-controls');
-    controls.append(labelWrap('Quality', qualityInput), labelWrap('Format', formatSelect), exportBtn, clearBtn, toInspect);
+    controls.append(
+      labelWrap('Quality', qualityInput),
+      labelWrap('Format', formatSelect),
+      exportBtn,
+      clearBtn,
+      toInspect,
+      toStructure,
+      toConverter,
+      toLogic,
+    );
     panel.append(drop, fileInput, convertPreview, convertInfo, controls);
   }
 
@@ -434,7 +466,7 @@ export function createMediaLab(root, options = {}) {
   let inspectMeta, inspectBoxes;
   function buildInspect(panel) {
     const jump = btn('Open bytes in Hex Inspector', 'studio-btn');
-    jump.addEventListener('click', () => onNavigate('inspector'));
+    jump.addEventListener('click', () => openInHexInspector(onNavigate, onBytes, sourceBytes));
     inspectMeta = el('pre', 'studio-inspect-meta');
     inspectBoxes = el('pre', 'studio-inspect-boxes');
     panel.append(inspectMeta, inspectBoxes, jump);
@@ -447,7 +479,11 @@ export function createMediaLab(root, options = {}) {
     }
     const det = detectImageFormat(sourceBytes);
     const info = inspectImageBytes(sourceBytes);
-    inspectMeta.textContent = JSON.stringify({ format: det.format, mime: det.mimeType, bytes: sourceBytes.length, ...info }, null, 2);
+    inspectMeta.textContent = JSON.stringify(
+      { format: det.format, mime: det.mimeType, bytes: sourceBytes.length, ...info },
+      null,
+      2,
+    );
     if (det.format === 'heif') {
       try {
         const c = inspectContainer(sourceBytes);
@@ -505,7 +541,15 @@ export function createMediaLab(root, options = {}) {
       renderBatchList();
     });
     batchListEl = el('div', 'studio-batch-list');
-    panel.append(drop, fileInput, labelWrap('Format', batchFormat), labelWrap('Quality', batchQuality), runBtn, clearBtn, batchListEl);
+    panel.append(
+      drop,
+      fileInput,
+      labelWrap('Format', batchFormat),
+      labelWrap('Quality', batchQuality),
+      runBtn,
+      clearBtn,
+      batchListEl,
+    );
   }
 
   async function enqueueFiles(files) {
@@ -566,7 +610,7 @@ export function createMediaLab(root, options = {}) {
       }
     });
     renderBatchList();
-    setStatus('Batch done');
+    setStatus('Batch complete');
   }
 
   function loadImage(url) {
@@ -588,18 +632,7 @@ export function createMediaLab(root, options = {}) {
 
   return {
     setMode,
-    loadBytes(bytes, name) {
-      sourceName = name || 'image';
-      notifyBytes(bytes);
-      const det = detectImageFormat(bytes);
-      revokePreview();
-      if (det.format !== 'heif') {
-        previewUrl = URL.createObjectURL(new Blob([bytes], { type: det.mimeType }));
-        convertPreview.src = previewUrl;
-      }
-      convertInfo.textContent = `${det.format} · ${bytes.length} bytes`;
-      if (mode === 'inspect') refreshInspect();
-      if (mode === 'create') redrawCreate();
-    },
+    getMode: () => mode,
+    getBytes: () => sourceBytes,
   };
 }
