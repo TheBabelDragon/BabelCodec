@@ -43,6 +43,8 @@ export {
   generateGrayScott,
   hashRgba,
   encodeRgbaToPng,
+  rngFromDigest,
+  sfc32,
   SSTV_PRESETS,
   PROCEDURAL_PROVIDER_VERSION,
   PROCEDURAL_PROVIDER_ID,

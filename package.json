@@ -1,7 +1,7 @@
 {
   "name": "babelcodec",
-  "version": "0.10.0",
-  "description": "Universal encoding, Unicode text, Neural Signal Contract, Morse, Boolean logic, interactive SHA-256 computer, educational CPU, and image generation workstation — offline-first",
+  "version": "0.11.0",
+  "description": "Universal encoding, Unicode text, Neural Signal Contract, Morse, Boolean logic, interactive SHA-256 computer, educational CPU, and offline procedural image generation workstation",
   "type": "module",
   "main": "src/api/babelcodec.js",
   "exports": {
@@ -36,6 +36,6 @@
     "build": "node scripts/build.js",
     "validate": "npm test && npm run build"
   },
-  "keywords": ["encoding", "unicode", "neural", "signal", "contract", "wasm", "rust", "morse", "sha256", "cpu", "workbench", "offline", "heif", "heic", "image", "generation"],
+  "keywords": ["encoding", "unicode", "neural", "signal", "contract", "wasm", "rust", "morse", "sha256", "cpu", "workbench", "offline", "heif", "heic", "image", "generation", "procedural"],
   "license": "MIT"
 }
