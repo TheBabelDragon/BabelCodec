@@ -3,6 +3,7 @@
  * Extends Media Lab; offline Canvas/SVG; HEIF via existing structural decoder.
  * Generation pipeline is optional and offline-first (mock provider by default).
  * Suite handoff via shared asset registry + onNavigate/onBytes.
+ * Local edit ops on Convert (no network).
  */
 
 import {
@@ -36,6 +37,12 @@ import {
   openInLogicLab,
 } from '../media/handoff.js';
 import { getDefaultRegistry } from '../media/assets/index.js';
+import {
+  flipImageData,
+  rotateImageData90,
+  adjustImageData,
+  createEditHistory,
+} from '../media/edit/index.js';
 
 /**
  * @param {HTMLElement} root
@@ -366,7 +373,96 @@ export function createMediaLab(root, options = {}) {
       toConverter,
       toLogic,
     );
-    panel.append(drop, fileInput, convertPreview, convertInfo, controls);
+
+    const editBar = el('div', 'studio-edit-bar');
+    editBar.setAttribute('aria-label', 'Local edits');
+    const editHint = el('div', 'gen-hint');
+    editHint.textContent = 'Local edits (no network). Use Undo to step back.';
+    const hist = createEditHistory(24);
+    let workingImageData = null;
+
+    async function ensureWorkingImageData() {
+      if (!previewUrl || !convertPreview.naturalWidth) {
+        setStatus('Load an image before editing');
+        return null;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = convertPreview.naturalWidth;
+      canvas.height = convertPreview.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(convertPreview, 0, 0);
+      workingImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      if (!hist.length) hist.push(workingImageData);
+      return workingImageData;
+    }
+
+    async function applyEdit(label, fn) {
+      try {
+        const idata = await ensureWorkingImageData();
+        if (!idata) return;
+        const next = fn(idata);
+        hist.push(next);
+        workingImageData = next;
+        await showImageData(next, label);
+      } catch (e) {
+        setStatus('Edit failed: ' + (e && e.message ? e.message : e));
+      }
+    }
+
+    async function showImageData(idata, label) {
+      const canvas = document.createElement('canvas');
+      canvas.width = idata.width;
+      canvas.height = idata.height;
+      canvas.getContext('2d').putImageData(idata, 0, 0);
+      const blob = await canvasToBlob(canvas, { mimeType: 'image/png', quality: 1 });
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      sourceName = (sourceName || 'edit').replace(/\.[^.]+$/, '') + '-edit.png';
+      notifyBytes(buf);
+      revokePreview();
+      previewUrl = URL.createObjectURL(blob);
+      convertPreview.src = previewUrl;
+      convertInfo.textContent = `edited · ${idata.width}×${idata.height} · ${buf.length} bytes`;
+      setStatus(label || 'Edited');
+    }
+
+    const editBtns = [
+      ['Grayscale', () => applyEdit('Grayscale', (d) => adjustImageData(d, { grayscale: true }))],
+      ['Flip H', () => applyEdit('Flip H', (d) => flipImageData(d, 'x'))],
+      ['Flip V', () => applyEdit('Flip V', (d) => flipImageData(d, 'y'))],
+      ['Rotate 90°', () => applyEdit('Rotate 90°', (d) => rotateImageData90(d, 1))],
+      ['Brighten', () => applyEdit('Brighten', (d) => adjustImageData(d, { brightness: 1.15 }))],
+      ['Contrast', () => applyEdit('Contrast', (d) => adjustImageData(d, { contrast: 1.2 }))],
+      [
+        'Undo',
+        async () => {
+          if (!hist.canUndo()) {
+            setStatus('Nothing to undo');
+            return;
+          }
+          const d = hist.undo();
+          workingImageData = d;
+          await showImageData(d, 'Undo');
+        },
+      ],
+      [
+        'Redo',
+        async () => {
+          if (!hist.canRedo()) {
+            setStatus('Nothing to redo');
+            return;
+          }
+          const d = hist.redo();
+          workingImageData = d;
+          await showImageData(d, 'Redo');
+        },
+      ],
+    ];
+    for (const [lab, fn] of editBtns) {
+      const b = btn(lab, 'studio-btn studio-edit-btn');
+      b.addEventListener('click', fn);
+      editBar.appendChild(b);
+    }
+    panel.append(drop, fileInput, convertPreview, convertInfo, controls, editHint, editBar);
   }
 
   async function loadFile(file) {
