@@ -1,6 +1,6 @@
 /**
  * Image Generation workspace — first-class mode inside Image Studio.
- * Dark creative workstation UI. Offline mock by default.
+ * Dark creative workstation UI. Offline mock + procedural by default.
  */
 
 import {
@@ -12,8 +12,8 @@ import {
   getJob,
   discoverTpuCapabilities,
   discoverProviderCapabilities,
-  listProviderIds,
   JOB_STATES,
+  SSTV_PRESETS,
 } from '../media/generation/index.js';
 import { exportSstvHandoff } from '../media/integrations/index.js';
 
@@ -38,13 +38,11 @@ export function buildGeneratePanel(panel, ctx) {
   /** @type {string[]} */
   let galleryUrls = [];
 
-  // —— layout ——
   const layout = el('div', 'gen-layout');
   const controls = el('div', 'gen-controls');
   const previewCol = el('div', 'gen-preview-col');
   const sideCol = el('div', 'gen-side-col');
 
-  // Prompt
   const promptLabel = el('label', 'gen-label');
   promptLabel.textContent = 'Prompt';
   const promptArea = el('textarea', 'gen-prompt');
@@ -58,15 +56,12 @@ export function buildGeneratePanel(panel, ctx) {
   negArea.rows = 2;
   negArea.placeholder = 'Elements to avoid…';
 
-  // Provider / model
   const providerSelect = el('select', 'studio-select gen-select');
   const modelSelect = el('select', 'studio-select gen-select');
 
-  // TPU status
   const tpuStatus = el('div', 'gen-tpu-status');
   tpuStatus.textContent = 'TPU: checking…';
 
-  // Dimensions
   const dimRow = el('div', 'gen-dim-row');
   const wInput = numInput(512);
   const hInput = numInput(512);
@@ -76,6 +71,8 @@ export function buildGeneratePanel(panel, ctx) {
     ['16:9', '16:9'],
     ['9:16', '9:16'],
     ['4:3', '4:3'],
+    ['martin_m1', SSTV_PRESETS.martin_m1.label],
+    ['robot36', SSTV_PRESETS.robot36.label],
     ['custom', 'Custom'],
   ]) {
     const o = el('option');
@@ -97,10 +94,15 @@ export function buildGeneratePanel(panel, ctx) {
     } else if (a === '4:3') {
       wInput.value = '640';
       hInput.value = '480';
+    } else if (a === 'martin_m1') {
+      wInput.value = String(SSTV_PRESETS.martin_m1.width);
+      hInput.value = String(SSTV_PRESETS.martin_m1.height);
+    } else if (a === 'robot36') {
+      wInput.value = String(SSTV_PRESETS.robot36.width);
+      hInput.value = String(SSTV_PRESETS.robot36.height);
     }
   });
 
-  // Variants / quality
   const variantsInput = numInput(1);
   variantsInput.min = '1';
   variantsInput.max = '4';
@@ -111,45 +113,40 @@ export function buildGeneratePanel(panel, ctx) {
   qualityInput.step = '0.01';
   qualityInput.value = '0.92';
 
-  // Advanced disclosure
   const advToggle = btn('Advanced settings', 'studio-btn gen-adv-toggle');
   const advPanel = el('div', 'gen-advanced');
   advPanel.hidden = true;
   const seedInput = el('input', 'studio-input');
   seedInput.type = 'text';
-  seedInput.placeholder = 'Seed (optional)';
+  seedInput.placeholder = 'Seed (optional — required for exact procedural replay)';
   const useTpuCheck = el('input');
   useTpuCheck.type = 'checkbox';
   useTpuCheck.id = 'gen-use-tpu';
   const useTpuLabel = el('label', 'gen-check-label');
   useTpuLabel.htmlFor = 'gen-use-tpu';
   useTpuLabel.append(useTpuCheck, document.createTextNode(' Request TPU assist (if available)'));
-  advPanel.append(
-    field('Seed', seedInput),
-    useTpuLabel,
-    el('p', 'gen-hint')
-  );
+  advPanel.append(field('Seed', seedInput), useTpuLabel, el('p', 'gen-hint'));
   advPanel.querySelector('.gen-hint').textContent =
-    'Remote providers require an explicit gateway configuration. No API keys are stored in the client.';
+    'Procedural provider is fully offline and deterministic. Remote providers need a gateway; no API keys in the client.';
   advToggle.addEventListener('click', () => {
     advPanel.hidden = !advPanel.hidden;
   });
 
-  // Actions
   const actionRow = el('div', 'gen-actions');
   const generateBtn = btn('Generate', 'studio-btn primary gen-btn-generate');
   const cancelBtn = btn('Cancel', 'studio-btn gen-btn-cancel');
   cancelBtn.disabled = true;
   actionRow.append(generateBtn, cancelBtn);
 
-  // Progress
   const progressWrap = el('div', 'gen-progress-wrap');
   const progressBar = el('div', 'gen-progress-bar');
   const progressLabel = el('div', 'gen-progress-label');
   progressLabel.textContent = 'Idle';
   progressWrap.append(progressBar, progressLabel);
 
-  // Assemble controls
+  const detailsPanel = el('pre', 'gen-job-details mono');
+  detailsPanel.textContent = 'Job details appear after generate.';
+
   controls.append(
     promptLabel,
     promptArea,
@@ -158,18 +155,18 @@ export function buildGeneratePanel(panel, ctx) {
     field('Provider', providerSelect),
     field('Model', modelSelect),
     tpuStatus,
-    field('Aspect', aspectSelect),
+    field('Aspect / SSTV', aspectSelect),
     dimRow,
     field('Variants', variantsInput),
     field('Quality', qualityInput),
     advToggle,
     advPanel,
     actionRow,
-    progressWrap
+    progressWrap,
+    detailsPanel,
   );
   dimRow.append(field('W', wInput), field('H', hInput));
 
-  // Preview / gallery
   const previewFrame = el('div', 'gen-preview-frame');
   const previewImg = el('img', 'gen-preview-img');
   previewImg.alt = 'Generated preview';
@@ -187,7 +184,6 @@ export function buildGeneratePanel(panel, ctx) {
 
   previewCol.append(previewFrame, gallery, galleryActions);
 
-  // History
   const histTitle = el('div', 'studio-side-title');
   histTitle.textContent = 'History';
   const histList = el('div', 'gen-history');
@@ -196,14 +192,14 @@ export function buildGeneratePanel(panel, ctx) {
   layout.append(controls, previewCol, sideCol);
   panel.appendChild(layout);
 
-  // —— populate providers ——
   async function refreshCapabilities() {
     const providers = await discoverProviderCapabilities();
     providerSelect.textContent = '';
     for (const p of providers) {
       const o = el('option');
       o.value = p.providerId;
-      o.textContent = (p.displayName || p.providerId) + (p.requiresNetwork ? ' (remote)' : ' (offline)');
+      o.textContent =
+        (p.displayName || p.providerId) + (p.requiresNetwork ? ' (remote)' : ' (offline)');
       providerSelect.appendChild(o);
     }
     if (!providers.length) {
@@ -211,6 +207,10 @@ export function buildGeneratePanel(panel, ctx) {
       o.value = 'mock';
       o.textContent = 'Mock (offline)';
       providerSelect.appendChild(o);
+    }
+    // Prefer procedural when present
+    if ([...providerSelect.options].some((o) => o.value === 'procedural')) {
+      providerSelect.value = 'procedural';
     }
     await refreshModels();
 
@@ -242,7 +242,30 @@ export function buildGeneratePanel(panel, ctx) {
 
   providerSelect.addEventListener('change', () => refreshModels());
 
-  // —— generate ——
+  function showJobDetails(job) {
+    if (!job) {
+      detailsPanel.textContent = 'Job details appear after generate.';
+      return;
+    }
+    const meta = job.results?.[0]?.providerMetadata || job.provenance?.providerMetadata || {};
+    const lines = [
+      `state: ${job.state}`,
+      `jobId: ${job.jobId}`,
+      `provider: ${job.request?.providerId}`,
+      `model: ${job.request?.modelId || '—'}`,
+      `size: ${job.request?.width}×${job.request?.height}`,
+      `seed: ${job.request?.seed ?? job.provenance?.seed ?? meta.seed ?? '—'}`,
+      `digest: ${job.provenance?.digestHex || meta.digestHex || '—'}`,
+      `generator: ${job.provenance?.generator || meta.generator || '—'}`,
+      `providerVersion: ${job.provenance?.providerVersion || meta.providerVersion || '—'}`,
+    ];
+    const params = job.provenance?.params || meta.params;
+    if (params) {
+      lines.push('params: ' + JSON.stringify(params, null, 0));
+    }
+    detailsPanel.textContent = lines.join('\n');
+  }
+
   generateBtn.addEventListener('click', async () => {
     const prompt = promptArea.value.trim();
     if (!prompt) {
@@ -258,7 +281,7 @@ export function buildGeneratePanel(panel, ctx) {
         {
           prompt,
           negativePrompt: negArea.value.trim() || undefined,
-          providerId: providerSelect.value || 'mock',
+          providerId: providerSelect.value || 'procedural',
           modelId: modelSelect.value || undefined,
           width: parseInt(wInput.value, 10) || 512,
           height: parseInt(hInput.value, 10) || 512,
@@ -273,11 +296,12 @@ export function buildGeneratePanel(panel, ctx) {
             setProgress(j.progress || 0, j.state);
             activeJobId = j.jobId;
           },
-        }
+        },
       );
       activeJobId = job.jobId;
       const done = await awaitJob(job.jobId);
       setProgress(done.progress || (done.state === JOB_STATES.COMPLETE ? 1 : 0), done.state);
+      showJobDetails(done);
 
       if (done.state === JOB_STATES.COMPLETE && done.results?.length) {
         showResults(done.results);
@@ -402,6 +426,7 @@ export function buildGeneratePanel(panel, ctx) {
         const full = getJob(j.jobId);
         if (full?.results?.length) showResults(full.results);
         setProgress(full?.progress || 0, full?.state);
+        showJobDetails(full);
       });
       histList.appendChild(row);
     }
@@ -424,7 +449,6 @@ export function buildGeneratePanel(panel, ctx) {
     return i;
   }
 
-  // init
   refreshCapabilities().then(() => renderHistory());
   setProgress(0, '');
 

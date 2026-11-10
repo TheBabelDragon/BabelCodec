@@ -21,118 +21,9 @@ export const JOB_STATES = Object.freeze({
 export const TERMINAL_STATES = new Set(['COMPLETE', 'FAILED', 'CANCELLED']);
 
 /**
- * @typedef {object} TpuCapabilities
- * @property {string} schemaVersion
- * @property {string} backendId
- * @property {string} [displayName]
- * @property {boolean} available
- * @property {string} [status] healthy|degraded|unavailable
- * @property {string[]} operations
- * @property {string[]} [supportedModels]
- * @property {string[]} [precision] e.g. ['fp16','bf16','int8']
- * @property {{maxConcurrent?: number, maxMemoryMb?: number, maxBatch?: number}} [resourceConstraints]
- * @property {Record<string, unknown>} [deviceMetadata]
- * @property {number} [checkedAt]
- */
-
-/**
- * @typedef {object} GenerationRequest
- * @property {string} schemaVersion
- * @property {string} prompt
- * @property {string} [negativePrompt]
- * @property {string} providerId
- * @property {string} [modelId]
- * @property {number} [width]
- * @property {number} [height]
- * @property {string} [aspectRatio]
- * @property {string} [outputFormat] png|jpeg|webp
- * @property {number} [quality] 0-1
- * @property {number} [variants] 1..
- * @property {string} [seed]
- * @property {Uint8Array|null} [sourceImage] for img2img
- * @property {number} [strength] img2img strength
- * @property {string} [tpuBackendId]
- * @property {Record<string, unknown>} [providerParams]
- * @property {boolean} [useTpu]
- */
-
-/**
- * @typedef {object} GenerationJob
- * @property {string} schemaVersion
- * @property {string} jobId
- * @property {JobState} state
- * @property {GenerationRequest} request
- * @property {number} createdAt
- * @property {number} [updatedAt]
- * @property {number} [startedAt]
- * @property {number} [completedAt]
- * @property {string} [error]
- * @property {string} [errorCode]
- * @property {number} [progress] 0-1
- * @property {string} [providerJobId]
- * @property {GenerationResult[]} [results]
- * @property {object} [provenance]
- * @property {number} attempt
- */
-
-/**
- * @typedef {object} GenerationResult
- * @property {string} schemaVersion
- * @property {string} resultId
- * @property {string} jobId
- * @property {ImageAsset} asset
- * @property {number} variantIndex
- * @property {Record<string, unknown>} [providerMetadata]
- */
-
-/**
- * @typedef {object} ImageAsset
- * @property {string} schemaVersion
- * @property {string} assetId
- * @property {Uint8Array} bytes
- * @property {string} mimeType
- * @property {number} [width]
- * @property {number} [height]
- * @property {string} [hash] sha-256 hex of original bytes
- * @property {string} [filename]
- * @property {number} createdAt
- */
-
-/**
- * @typedef {object} ProcessingDerivative
- * @property {string} schemaVersion
- * @property {string} derivativeId
- * @property {string} sourceAssetId
- * @property {ImageAsset} asset
- * @property {string} operation
- * @property {Record<string, unknown>} [params]
- * @property {number} createdAt
- */
-
-/**
- * @typedef {object} GenerationProvenance
- * @property {string} schemaVersion
- * @property {string} jobId
- * @property {string} prompt
- * @property {string} [negativePrompt]
- * @property {string} providerId
- * @property {string} [modelId]
- * @property {string} [tpuBackendId]
- * @property {number} createdAt
- * @property {number} [completedAt]
- * @property {number} [width]
- * @property {number} [height]
- * @property {string} [outputFormat]
- * @property {string} [originalHash]
- * @property {string[]} [processingHistory]
- * @property {string} [error]
- * @property {Record<string, unknown>} [providerMetadata]
- */
-
-/**
  * Validate a generation request. Throws on invalid input.
- * @param {Partial<GenerationRequest>} req
- * @returns {GenerationRequest}
+ * @param {Partial<object>} req
+ * @returns {object}
  */
 export function validateGenerationRequest(req) {
   if (!req || typeof req !== 'object') throw new Error('request must be an object');
@@ -147,7 +38,7 @@ export function validateGenerationRequest(req) {
   const quality = Math.max(0.05, Math.min(1, Number(req.quality) || 0.92));
   const outputFormat = normalizeFormat(req.outputFormat);
 
-  /** @type {GenerationRequest} */
+  /** @type {object} */
   const out = {
     schemaVersion: SCHEMA_VERSION,
     prompt,
@@ -191,8 +82,8 @@ function normalizeFormat(f) {
 }
 
 /**
- * @param {Partial<TpuCapabilities>} caps
- * @returns {TpuCapabilities}
+ * @param {Partial<object>} caps
+ * @returns {object}
  */
 export function normalizeTpuCapabilities(caps) {
   return {
@@ -212,9 +103,9 @@ export function normalizeTpuCapabilities(caps) {
 
 /**
  * Create an empty job shell.
- * @param {GenerationRequest} request
+ * @param {object} request
  * @param {string} jobId
- * @returns {GenerationJob}
+ * @returns {object}
  */
 export function createJobShell(request, jobId) {
   const now = Date.now();
@@ -232,11 +123,12 @@ export function createJobShell(request, jobId) {
 
 /**
  * Build provenance from a completed (or failed) job.
- * @param {GenerationJob} job
- * @returns {GenerationProvenance}
+ * Includes procedural providerMetadata (digest, params, generator) when present.
+ * @param {object} job
+ * @returns {object}
  */
 export function buildProvenance(job) {
-  /** @type {GenerationProvenance} */
+  /** @type {object} */
   const p = {
     schemaVersion: SCHEMA_VERSION,
     jobId: job.jobId,
@@ -247,6 +139,7 @@ export function buildProvenance(job) {
   if (job.request.negativePrompt) p.negativePrompt = job.request.negativePrompt;
   if (job.request.modelId) p.modelId = job.request.modelId;
   if (job.request.tpuBackendId) p.tpuBackendId = job.request.tpuBackendId;
+  if (job.request.seed != null) p.seed = String(job.request.seed);
   if (job.completedAt) p.completedAt = job.completedAt;
   if (job.request.width) p.width = job.request.width;
   if (job.request.height) p.height = job.request.height;
@@ -254,5 +147,13 @@ export function buildProvenance(job) {
   if (job.error) p.error = job.error;
   if (job.results?.[0]?.asset?.hash) p.originalHash = job.results[0].asset.hash;
   if (job.provenance?.processingHistory) p.processingHistory = [...job.provenance.processingHistory];
+  const meta = job.results?.[0]?.providerMetadata;
+  if (meta && typeof meta === 'object') {
+    p.providerMetadata = { ...meta };
+    if (meta.digestHex) p.digestHex = meta.digestHex;
+    if (meta.generator) p.generator = meta.generator;
+    if (meta.params) p.params = { ...meta.params };
+    if (meta.providerVersion) p.providerVersion = meta.providerVersion;
+  }
   return p;
 }
