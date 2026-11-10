@@ -36,7 +36,11 @@ export async function toCanonical(text, opts = {}) {
   const diagnostics = [...(opts.diagnostics || [])];
   if (raw.diagnostics && Array.isArray(raw.diagnostics)) {
     for (const d of raw.diagnostics) {
-      diagnostics.push(makeDiagnostic(d.code || 'ENGINE', d.message || '', d.detail || null));
+      diagnostics.push(
+        makeDiagnostic(d.code || 'ENGINE', d.message || '', {
+          detail: d.detail || null,
+        }),
+      );
     }
   }
 
@@ -55,7 +59,7 @@ export async function toCanonical(text, opts = {}) {
       isXidContinue: s.is_xid_continue ?? s.isXidContinue,
       script: s.script,
       isCombining: s.is_combining ?? s.isCombining,
-    })
+    }),
   );
 
   const graphemes = (raw.graphemes || []).map((g) =>
@@ -64,7 +68,7 @@ export async function toCanonical(text, opts = {}) {
       start: g.start,
       end: g.end,
       codePoints: g.code_points || g.codePoints || [],
-    })
+    }),
   );
 
   return Object.freeze({
@@ -82,7 +86,8 @@ export async function toCanonical(text, opts = {}) {
       scalars: Object.freeze(analysisScalars),
     }),
     graphemes: Object.freeze(graphemes),
-    graphemeMethod: raw.grapheme_method || 'unicode-segmentation (UAX #29 via Rust WASM)',
+    graphemeMethod:
+      raw.grapheme_method || 'unicode-segmentation (UAX #29 via Rust WASM)',
     script: raw.script?.primary || 'Unknown',
     scripts: Object.freeze({ ...(raw.script?.scripts || {}) }),
     mixedScripts: !!raw.script?.mixed,
