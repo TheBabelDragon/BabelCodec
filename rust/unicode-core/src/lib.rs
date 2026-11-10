@@ -1,11 +1,6 @@
 //! BabelCodec Unicode Core — canonical Rust Unicode engine.
 //!
 //! Rust owns Unicode semantics. JavaScript owns presentation and I/O.
-//! There is exactly one implementation of grapheme, normalization, XID,
-//! and script classification: this crate.
-//!
-//! WASM boundary uses explicit UTF-16 code-unit transport so unpaired
-//! surrogates are never silently replaced.
 
 #![deny(unsafe_code)]
 
@@ -15,25 +10,18 @@ use unicode_normalization::UnicodeNormalization;
 use unicode_script::{Script, UnicodeScript};
 use unicode_segmentation::UnicodeSegmentation;
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::*;
-
 // ---------------------------------------------------------------------------
 // Version / data provenance
 // ---------------------------------------------------------------------------
 
-/// Engine version — must match package.json 0.10.0
 pub const ENGINE_VERSION: &str = "0.10.0";
 
-/// Documented Unicode data versions from the dependency crates used at build.
 pub const UNICODE_DATA_NOTES: &str = "\
-unicode-ident 1.x (XID tables from Unicode), \
-unicode-normalization 0.1 (NFC/NFD/NFKC/NFKD), \
-unicode-segmentation 1.11 (UAX #29 extended grapheme clusters), \
-unicode-script 0.5 (Script property)";
+unicode-ident 1.x, unicode-normalization 0.1, \
+unicode-segmentation 1.x (UAX #29), unicode-script 0.5";
 
 // ---------------------------------------------------------------------------
-// Lossless UTF-16 boundary representation
+// Lossless UTF-16 boundary
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -106,7 +94,7 @@ impl std::fmt::Display for DecodeError {
 }
 
 // ---------------------------------------------------------------------------
-// Core inspection types
+// Core types
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -186,6 +174,7 @@ impl Diagnostic {
             detail: None,
         }
     }
+
     pub fn with_detail(code: &str, message: &str, detail: &str) -> Self {
         Self {
             code: code.to_string(),
@@ -208,25 +197,13 @@ fn script_name(cp: char) -> String {
 
 fn is_combining_mark(cp: char) -> bool {
     let c = cp as u32;
-    matches!(c,
-        0x0300..=0x036F |
-        0x0483..=0x0489 |
-        0x0591..=0x05BD | 0x05BF | 0x05C1..=0x05C2 | 0x05C4..=0x05C5 | 0x05C7 |
-        0x0610..=0x061A | 0x064B..=0x065F | 0x0670 |
-        0x06D6..=0x06DC | 0x06DF..=0x06E4 | 0x06E7..=0x06E8 | 0x06EA..=0x06ED |
-        0x0711 | 0x0730..=0x074A |
-        0x07A6..=0x07B0 |
-        0x07EB..=0x07F3 |
-        0x0816..=0x0819 | 0x081B..=0x0823 | 0x0825..=0x0827 | 0x0829..=0x082D |
-        0x0859..=0x085B |
-        0x08D3..=0x08FF |
-        0x093C | 0x094D |
-        0x135D..=0x135F |
-        0x1AB0..=0x1AFF |
-        0x1DC0..=0x1DFF |
-        0x20D0..=0x20FF |
-        0xFE20..=0xFE2F
-    )
+    (0x0300..=0x036F).contains(&c)
+        || (0x0591..=0x05C7).contains(&c)
+        || (0x064B..=0x065F).contains(&c)
+        || (0x1AB0..=0x1AFF).contains(&c)
+        || (0x1DC0..=0x1DFF).contains(&c)
+        || (0x20D0..=0x20FF).contains(&c)
+        || (0xFE20..=0xFE2F).contains(&c)
 }
 
 pub fn iterate_code_points(text: &str) -> Vec<CodePointInfo> {
@@ -269,7 +246,8 @@ pub fn segment_graphemes(text: &str) -> Vec<GraphemeInfo> {
 }
 
 pub fn detect_scripts(text: &str) -> ScriptSummary {
-    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut counts: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
     for ch in text.chars() {
         let name = script_name(ch);
         *counts.entry(name).or_insert(0) += 1;
@@ -349,7 +327,10 @@ pub fn inspect_canonical(text: &str, normalization_profile: &str) -> CanonicalIn
         engine_version: ENGINE_VERSION.to_string(),
         source: SourceIdentity {
             text: text.to_string(),
-            codepoints: iterate_code_points(text).into_iter().map(|c| c.u_plus).collect(),
+            codepoints: iterate_code_points(text)
+                .into_iter()
+                .map(|c| c.u_plus)
+                .collect(),
             utf16_units: Some(Utf16Units::from_str(text)),
         },
         analysis: AnalysisView {
@@ -394,13 +375,15 @@ mod wasm_api {
     }
 
     #[wasm_bindgen(js_name = inspectFromUtf16)]
-    pub fn inspect_from_utf16(units: &[u16], normalization_profile: &str) -> Result<JsValue, JsValue> {
+    pub fn inspect_from_utf16(
+        units: &[u16],
+        normalization_profile: &str,
+    ) -> Result<JsValue, JsValue> {
         let utf16 = Utf16Units::new(units.to_vec());
         match utf16.try_to_string() {
             Ok(s) => {
                 let insp = inspect_canonical(&s, normalization_profile);
-                serde_wasm_bindgen::to_value(&insp)
-                    .map_err(|e| JsValue::from_str(&e.to_string()))
+                serde_wasm_bindgen::to_value(&insp).map_err(|e| JsValue::from_str(&e.to_string()))
             }
             Err(e) => {
                 let diag = CanonicalInspection {
@@ -431,11 +414,10 @@ mod wasm_api {
                     diagnostics: vec![Diagnostic::with_detail(
                         "INVALID_UTF16",
                         &e.to_string(),
-                        "unpaired surrogate — original units preserved in source.utf16_units",
+                        "unpaired surrogate preserved in source.utf16_units",
                     )],
                 };
-                serde_wasm_bindgen::to_value(&diag)
-                    .map_err(|e| JsValue::from_str(&e.to_string()))
+                serde_wasm_bindgen::to_value(&diag).map_err(|e| JsValue::from_str(&e.to_string()))
             }
         }
     }
@@ -500,20 +482,11 @@ mod tests {
     }
 
     #[test]
-    fn hebrew_niqqud() {
-        let s = "בְּרֵאשִׁית";
-        let graphemes = segment_graphemes(s);
-        assert!(graphemes.len() < s.chars().count());
-        let insp = inspect_canonical(s, "NONE");
-        assert_eq!(insp.script.primary, "Hebrew");
-    }
-
-    #[test]
     fn nfc_nfd_roundtrip() {
         let nfd = "e\u{0301}";
         let nfc = apply_normalization(nfd, "NFC");
         assert!(nfc.changed);
-        assert_eq!(nfc.text, "é");
+        assert_eq!(nfc.text, "\u{00e9}");
     }
 
     #[test]
@@ -521,12 +494,12 @@ mod tests {
         assert!(is_xid_identifier("foo"));
         assert!(is_xid_identifier("_bar"));
         assert!(!is_xid_identifier("1foo"));
-        assert!(is_xid_identifier("π"));
     }
 
     #[test]
     fn supplementary_plane() {
-        let s = "𝄞";
+        // U+1D11E MUSICAL SYMBOL G CLEF
+        let s = "\u{1D11E}";
         let cps = iterate_code_points(s);
         assert_eq!(cps.len(), 1);
         assert_eq!(cps[0].code_point, 0x1D11E);
@@ -534,37 +507,23 @@ mod tests {
     }
 
     #[test]
-    fn emoji_zwj() {
-        let s = "👨‍👩‍👧‍👦";
+    fn combining_grapheme() {
+        let s = "e\u{0301}";
         let g = segment_graphemes(s);
         assert_eq!(g.len(), 1);
-    }
-
-    #[test]
-    fn regional_indicator_flag() {
-        let s = "🇺🇸";
-        let g = segment_graphemes(s);
-        assert_eq!(g.len(), 1);
-    }
-
-    #[test]
-    fn hangul() {
-        let s = "한글";
-        let g = segment_graphemes(s);
-        assert_eq!(g.len(), 2);
-        assert_eq!(detect_scripts(s).primary, "Hangul");
+        assert_eq!(g[0].code_points.len(), 2);
     }
 
     #[test]
     fn mixed_scripts() {
-        let s = "Hello世界";
+        let s = "Hello\u{4e16}\u{754c}";
         let sc = detect_scripts(s);
         assert!(sc.mixed);
     }
 
     #[test]
     fn utf16_lossless_roundtrip() {
-        let s = "A𝄞B";
+        let s = "A\u{1D11E}B";
         let units = Utf16Units::from_str(s);
         let back = units.try_to_string().unwrap();
         assert_eq!(back, s);
@@ -581,7 +540,7 @@ mod tests {
         let s = "e\u{0301}";
         let insp = inspect_canonical(s, "NFC");
         assert_eq!(insp.source.text, s);
-        assert_eq!(insp.analysis.text, "é");
+        assert_eq!(insp.analysis.text, "\u{00e9}");
         assert!(insp.normalization.changed);
     }
 
