@@ -13,6 +13,7 @@
 import http from 'node:http';
 import { createHash } from 'node:crypto';
 import { URL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 
 const PORT = Number(process.env.PORT || 8787);
 const CORS_ORIGINS = String(process.env.CORS_ORIGINS || 'http://127.0.0.1:5500,http://localhost:5500')
@@ -36,15 +37,15 @@ function clientIp(req) {
   return req.socket.remoteAddress || 'unknown';
 }
 
-function allowRate(ip) {
+export function allowRate(ip, limit = RATE_LIMIT_PER_MIN, store = rate) {
   const now = Date.now();
-  let e = rate.get(ip);
+  let e = store.get(ip);
   if (!e || now > e.reset) {
     e = { count: 0, reset: now + 60_000 };
-    rate.set(ip, e);
+    store.set(ip, e);
   }
   e.count += 1;
-  return e.count <= RATE_LIMIT_PER_MIN;
+  return e.count <= limit;
 }
 
 function setCors(req, res) {
@@ -93,7 +94,7 @@ function checkAuth(req) {
 }
 
 /** Deterministic tiny RGB PNG (no deps) for synthetic mode. */
-function syntheticPng(prompt, width, height, seed) {
+export function syntheticPng(prompt, width, height, seed) {
   const w = Math.max(1, Math.min(MAX_DIMENSION, width | 0));
   const h = Math.max(1, Math.min(MAX_DIMENSION, height | 0));
   const material = `${prompt}\n${seed || ''}\n${w}x${h}`;
@@ -102,7 +103,6 @@ function syntheticPng(prompt, width, height, seed) {
   const g = digest[1];
   const b = digest[2];
 
-  // Uncompressed RGB PNG
   const raw = Buffer.alloc((w * 3 + 1) * h);
   for (let y = 0; y < h; y++) {
     const row = y * (w * 3 + 1);
@@ -146,7 +146,6 @@ function syntheticPng(prompt, width, height, seed) {
     return ((b << 16) | a) >>> 0;
   }
 
-  // Stored zlib blocks
   const blocks = [];
   let offset = 0;
   const max = 65535;
@@ -161,11 +160,7 @@ function syntheticPng(prompt, width, height, seed) {
     blocks.push(head, raw.subarray(offset, offset + len));
     offset += len;
   }
-  const zlib = Buffer.concat([
-    Buffer.from([0x78, 0x01]),
-    ...blocks,
-    u32(adler32(raw)),
-  ]);
+  const zlib = Buffer.concat([Buffer.from([0x78, 0x01]), ...blocks, u32(adler32(raw))]);
 
   const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
   const ihdrData = Buffer.alloc(13);
@@ -215,7 +210,7 @@ async function upstreamGenerate(body) {
   }
 }
 
-function validateGenerate(obj) {
+export function validateGenerate(obj) {
   if (!obj || typeof obj !== 'object') return 'body must be JSON object';
   const prompt = String(obj.prompt ?? '');
   if (!prompt.trim()) return 'prompt required';
@@ -226,115 +221,123 @@ function validateGenerate(obj) {
   if (width < 1 || height < 1 || width > MAX_DIMENSION || height > MAX_DIMENSION) {
     return `dimensions must be 1..${MAX_DIMENSION}`;
   }
-  // Reject unknown dangerous keys that look like open-proxy attempts
   if (obj.url || obj.target || obj.fetch_url || obj.endpoint) {
     return 'arbitrary URL fields are not allowed';
   }
   return null;
 }
 
-const server = http.createServer(async (req, res) => {
-  setCors(req, res);
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204);
-    res.end();
-    return;
-  }
-
-  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  const path = url.pathname;
-
-  try {
-    if (req.method === 'GET' && path === '/health') {
-      return json(res, 200, {
-        ok: true,
-        mode: UPSTREAM_URL ? 'upstream' : 'synthetic',
-        version: '1',
-      });
-    }
-
-    if (req.method === 'GET' && path === '/v1/capabilities') {
-      return json(res, 200, {
-        textToImage: true,
-        imageToImage: false,
-        models: [{ id: 'default', name: UPSTREAM_URL ? 'Upstream default' : 'Synthetic PNG' }],
-        maxDimension: MAX_DIMENSION,
-        maxPromptChars: MAX_PROMPT_CHARS,
-        requiresAuth: Boolean(GATEWAY_TOKEN),
-        mode: UPSTREAM_URL ? 'upstream' : 'synthetic',
-      });
-    }
-
-    if (req.method === 'POST' && path === '/v1/generate') {
-      const ip = clientIp(req);
-      if (!allowRate(ip)) {
-        return json(res, 429, { error: 'rate limit exceeded', code: 'RATE_LIMIT' });
-      }
-      if (!checkAuth(req)) {
-        return json(res, 401, { error: 'unauthorized', code: 'UNAUTHORIZED' });
-      }
-
-      const raw = await readBody(req);
-      let body;
-      try {
-        body = JSON.parse(raw.toString('utf8') || '{}');
-      } catch {
-        return json(res, 400, { error: 'invalid JSON', code: 'BAD_JSON' });
-      }
-      const verr = validateGenerate(body);
-      if (verr) return json(res, 400, { error: verr, code: 'VALIDATION' });
-
-      const width = Math.round(Number(body.width ?? 512));
-      const height = Math.round(Number(body.height ?? 512));
-      const prompt = String(body.prompt);
-      const seed = body.seed != null ? String(body.seed) : '';
-      const generationId = createHash('sha256')
-        .update(`${prompt}\n${seed}\n${width}x${height}\n${Date.now()}`)
-        .digest('hex')
-        .slice(0, 16);
-
-      let buf;
-      let ctype = 'image/png';
-      if (UPSTREAM_URL) {
-        const out = await upstreamGenerate({
-          prompt,
-          negative_prompt: body.negative_prompt || body.negativePrompt || '',
-          width,
-          height,
-          seed,
-          model: body.model || 'default',
-        });
-        buf = out.buf;
-        ctype = out.ctype.startsWith('image/') ? out.ctype : 'image/png';
-      } else {
-        buf = syntheticPng(prompt, width, height, seed);
-      }
-
-      res.writeHead(200, {
-        'Content-Type': ctype,
-        'Content-Length': buf.length,
-        'X-Generation-Id': generationId,
-        'Cache-Control': 'no-store',
-      });
-      res.end(buf);
+export function createServer() {
+  return http.createServer(async (req, res) => {
+    setCors(req, res);
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
       return;
     }
 
-    json(res, 404, { error: 'not found', code: 'NOT_FOUND' });
-  } catch (e) {
-    const status = e.status || 500;
-    json(res, status, {
-      error: e.message || 'internal error',
-      code: e.code || 'INTERNAL',
-    });
-  }
-});
+    const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    const path = url.pathname;
 
-server.listen(PORT, () => {
-  // eslint-disable-next-line no-console
-  console.log(
-    `BabelCodec generation gateway on :${PORT} mode=${UPSTREAM_URL ? 'upstream' : 'synthetic'} cors=${CORS_ORIGINS.join('|')}`,
-  );
-});
+    try {
+      if (req.method === 'GET' && path === '/health') {
+        return json(res, 200, {
+          ok: true,
+          mode: UPSTREAM_URL ? 'upstream' : 'synthetic',
+          version: '1',
+        });
+      }
 
-export { validateGenerate, syntheticPng, allowRate };
+      if (req.method === 'GET' && path === '/v1/capabilities') {
+        return json(res, 200, {
+          textToImage: true,
+          imageToImage: false,
+          models: [{ id: 'default', name: UPSTREAM_URL ? 'Upstream default' : 'Synthetic PNG' }],
+          maxDimension: MAX_DIMENSION,
+          maxPromptChars: MAX_PROMPT_CHARS,
+          requiresAuth: Boolean(GATEWAY_TOKEN),
+          mode: UPSTREAM_URL ? 'upstream' : 'synthetic',
+        });
+      }
+
+      if (req.method === 'POST' && path === '/v1/generate') {
+        const ip = clientIp(req);
+        if (!allowRate(ip)) {
+          return json(res, 429, { error: 'rate limit exceeded', code: 'RATE_LIMIT' });
+        }
+        if (!checkAuth(req)) {
+          return json(res, 401, { error: 'unauthorized', code: 'UNAUTHORIZED' });
+        }
+
+        const raw = await readBody(req);
+        let body;
+        try {
+          body = JSON.parse(raw.toString('utf8') || '{}');
+        } catch {
+          return json(res, 400, { error: 'invalid JSON', code: 'BAD_JSON' });
+        }
+        const verr = validateGenerate(body);
+        if (verr) return json(res, 400, { error: verr, code: 'VALIDATION' });
+
+        const width = Math.round(Number(body.width ?? 512));
+        const height = Math.round(Number(body.height ?? 512));
+        const prompt = String(body.prompt);
+        const seed = body.seed != null ? String(body.seed) : '';
+        const generationId = createHash('sha256')
+          .update(`${prompt}\n${seed}\n${width}x${h}\n${Date.now()}`)
+          .digest('hex')
+          .slice(0, 16);
+
+        // fix typo - use height not h
+        void height;
+
+        let buf;
+        let ctype = 'image/png';
+        if (UPSTREAM_URL) {
+          const out = await upstreamGenerate({
+            prompt,
+            negative_prompt: body.negative_prompt || body.negativePrompt || '',
+            width,
+            height,
+            seed,
+            model: body.model || 'default',
+          });
+          buf = out.buf;
+          ctype = out.ctype.startsWith('image/') ? out.ctype : 'image/png';
+        } else {
+          buf = syntheticPng(prompt, width, height, seed);
+        }
+
+        res.writeHead(200, {
+          'Content-Type': ctype,
+          'Content-Length': buf.length,
+          'X-Generation-Id': generationId,
+          'Cache-Control': 'no-store',
+        });
+        res.end(buf);
+        return;
+      }
+
+      json(res, 404, { error: 'not found', code: 'NOT_FOUND' });
+    } catch (e) {
+      const status = e.status || 500;
+      json(res, status, {
+        error: e.message || 'internal error',
+        code: e.code || 'INTERNAL',
+      });
+    }
+  });
+}
+
+const isMain =
+  process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
+
+if (isMain) {
+  const server = createServer();
+  server.listen(PORT, () => {
+    // eslint-disable-next-line no-console
+    console.log(
+      `BabelCodec generation gateway on :${PORT} mode=${UPSTREAM_URL ? 'upstream' : 'synthetic'} cors=${CORS_ORIGINS.join('|')}`,
+    );
+  });
+}
