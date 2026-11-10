@@ -2,7 +2,7 @@ name: Test and Deploy
 
 on:
   push:
-    branches: [main, feat/rust-unicode-core-wasm, feat/neural-signal-contract-v1]
+    branches: [main, fix/wasm-pkg-pages-deploy]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -41,26 +41,23 @@ jobs:
           cargo fmt --all
           cargo fmt --all -- --check
 
-      - name: Cargo test (native) — required
-        run: |
-          cd rust
-          cargo test -p unicode-core --lib -- --nocapture
+      - name: Cargo test (native)
+        run: cd rust && cargo test -p unicode-core --lib -- --nocapture
 
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli --locked
-        continue-on-error: true
 
       - name: Build WASM package
-        id: wasm_build
-        continue-on-error: true
         run: |
           cd rust
           cargo build --release --target wasm32-unknown-unknown -p unicode-core
           wasm-bindgen --target web --out-dir ../pkg \
             target/wasm32-unknown-unknown/release/unicode_core.wasm
           ls -la ../pkg/
+          test -f ../pkg/unicode_core.js
+          test -f ../pkg/unicode_core_bg.wasm
 
-      - name: Run all Node tests (required)
+      - name: Run all Node tests
         run: |
           node --test \
             tests/**/*.test.js \
@@ -81,7 +78,6 @@ jobs:
         run: node scripts/build.js
 
       - name: Upload pkg artifact
-        if: steps.wasm_build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: unicode-core-wasm
@@ -97,10 +93,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Generate Cargo.lock
+        run: cd rust && cargo generate-lockfile
+
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --locked
+
+      - name: Build WASM into pkg/ for Pages
+        run: |
+          cd rust
+          cargo build --release --target wasm32-unknown-unknown -p unicode-core
+          wasm-bindgen --target web --out-dir ../pkg \
+            target/wasm32-unknown-unknown/release/unicode_core.wasm
+          ls -la ../pkg/
+          test -f ../pkg/unicode_core.js
+          test -f ../pkg/unicode_core_bg.wasm
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
-      - name: Upload artifact
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: .
