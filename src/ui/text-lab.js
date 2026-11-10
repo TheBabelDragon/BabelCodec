@@ -91,12 +91,11 @@ export function createTextLab(container, opts = {}) {
   });
   container.appendChild(status);
 
+  // NOT inspect-out — tests and layout query that for the main output panel only
   const diagBox = el('pre', {
-    className: 'mono inspect-out',
+    className: 'mono wasm-diag-panel',
     textContent: '',
-    style: 'display:none;white-space:pre-wrap;word-break:break-word;max-height:40vh;overflow:auto;font-size:12px;',
   });
-  // style via attribute may not work for all — set properties
   diagBox.style.display = 'none';
   diagBox.style.whiteSpace = 'pre-wrap';
   diagBox.style.wordBreak = 'break-word';
