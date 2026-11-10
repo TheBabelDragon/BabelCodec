@@ -16,17 +16,12 @@ import {
   SSTV_PRESETS,
 } from '../media/generation/index.js';
 import { exportSstvHandoff } from '../media/integrations/index.js';
+import { describeGatewayStatus, saveGatewayUrl } from './generation-status.js';
 
 /**
  * Build the Generate panel into `panel`.
  * @param {HTMLElement} panel
- * @param {{
- *   el: Function,
- *   btn: Function,
- *   setStatus: Function,
- *   notifyBytes: Function,
- *   onNavigate: Function,
- * }} ctx
+ * @param {{ el: Function, btn: Function, setStatus: Function, notifyBytes: Function, onNavigate: Function }} ctx
  */
 export function buildGeneratePanel(panel, ctx) {
   const { el, btn, setStatus, notifyBytes } = ctx;
@@ -61,6 +56,18 @@ export function buildGeneratePanel(panel, ctx) {
 
   const tpuStatus = el('div', 'gen-tpu-status');
   tpuStatus.textContent = 'TPU: checking…';
+
+  const configBanner = el('div', 'gen-config-banner');
+  const st0 = describeGatewayStatus();
+  configBanner.className = st0.className;
+  configBanner.textContent = st0.text;
+  const gwUrlInput = el('input', 'studio-input');
+  gwUrlInput.type = 'url';
+  gwUrlInput.placeholder = 'Gateway URL (optional) — https://…';
+  const gwSave = btn('Save gateway', 'studio-btn');
+  const gwClear = btn('Clear gateway', 'studio-btn');
+  const gwRow = el('div', 'gen-gw-row');
+  gwRow.append(gwSave, gwClear);
 
   const dimRow = el('div', 'gen-dim-row');
   const wInput = numInput(512);
@@ -148,6 +155,9 @@ export function buildGeneratePanel(panel, ctx) {
   detailsPanel.textContent = 'Job details appear after generate.';
 
   controls.append(
+    configBanner,
+    field('Gateway URL', gwUrlInput),
+    gwRow,
     promptLabel,
     promptArea,
     negLabel,
@@ -175,12 +185,14 @@ export function buildGeneratePanel(panel, ctx) {
   const galleryActions = el('div', 'gen-gallery-actions');
   const sendBtn = btn('Send to Image Studio', 'studio-btn');
   const downloadBtn = btn('Download', 'studio-btn');
+  const inspectBtn = btn('Inspect full size', 'studio-btn');
   const sstvBtn = btn('Export SSTV handoff', 'studio-btn');
   sendBtn.disabled = true;
   downloadBtn.disabled = true;
+  inspectBtn.disabled = true;
   sstvBtn.disabled = true;
   sstvBtn.title = 'Download PNG + Signal Processor contract v1 JSON (file-based handoff)';
-  galleryActions.append(sendBtn, downloadBtn, sstvBtn);
+  galleryActions.append(sendBtn, downloadBtn, inspectBtn, sstvBtn);
 
   previewCol.append(previewFrame, gallery, galleryActions);
 
@@ -189,8 +201,17 @@ export function buildGeneratePanel(panel, ctx) {
   const histList = el('div', 'gen-history');
   sideCol.append(histTitle, histList);
 
+  const lightbox = el('div', 'gen-lightbox');
+  lightbox.hidden = true;
+  const lightboxImg = el('img', 'gen-lightbox-img');
+  lightboxImg.alt = 'Full size';
+  const lightboxClose = btn('Close', 'studio-btn gen-lightbox-close');
+  lightbox.append(lightboxClose, lightboxImg);
+  lightbox.addEventListener('click', (ev) => {
+    if (ev.target === lightbox || ev.target === lightboxClose) lightbox.hidden = true;
+  });
   layout.append(controls, previewCol, sideCol);
-  panel.appendChild(layout);
+  panel.append(layout, lightbox);
 
   async function refreshCapabilities() {
     const providers = await discoverProviderCapabilities();
@@ -208,11 +229,14 @@ export function buildGeneratePanel(panel, ctx) {
       o.textContent = 'Mock (offline)';
       providerSelect.appendChild(o);
     }
-    // Prefer procedural when present
     if ([...providerSelect.options].some((o) => o.value === 'procedural')) {
       providerSelect.value = 'procedural';
     }
     await refreshModels();
+
+    const st = describeGatewayStatus();
+    configBanner.className = st.className;
+    configBanner.textContent = st.text;
 
     const tpu = await discoverTpuCapabilities();
     const available = tpu.filter((c) => c.available);
@@ -260,11 +284,19 @@ export function buildGeneratePanel(panel, ctx) {
       `providerVersion: ${job.provenance?.providerVersion || meta.providerVersion || '—'}`,
     ];
     const params = job.provenance?.params || meta.params;
-    if (params) {
-      lines.push('params: ' + JSON.stringify(params, null, 0));
-    }
+    if (params) lines.push('params: ' + JSON.stringify(params, null, 0));
     detailsPanel.textContent = lines.join('\n');
   }
+
+  gwSave.addEventListener('click', () => {
+    saveGatewayUrl(gwUrlInput.value.trim());
+    refreshCapabilities().then(() => setStatus('Gateway settings updated'));
+  });
+  gwClear.addEventListener('click', () => {
+    gwUrlInput.value = '';
+    saveGatewayUrl('');
+    refreshCapabilities().then(() => setStatus('Gateway cleared — offline only'));
+  });
 
   generateBtn.addEventListener('click', async () => {
     const prompt = promptArea.value.trim();
@@ -352,6 +384,7 @@ export function buildGeneratePanel(panel, ctx) {
         };
         sendBtn.disabled = false;
         downloadBtn.disabled = false;
+        inspectBtn.disabled = false;
         sstvBtn.disabled = false;
       });
       gallery.appendChild(thumb);
@@ -364,6 +397,7 @@ export function buildGeneratePanel(panel, ctx) {
         };
         sendBtn.disabled = false;
         downloadBtn.disabled = false;
+        inspectBtn.disabled = false;
         sstvBtn.disabled = false;
         first = false;
       }
@@ -389,6 +423,14 @@ export function buildGeneratePanel(panel, ctx) {
     a.download = 'babelcodec-generated.png';
     a.click();
   });
+
+  function openLightbox() {
+    if (!previewImg.src) return;
+    lightboxImg.src = previewImg.src;
+    lightbox.hidden = false;
+  }
+  inspectBtn.addEventListener('click', openLightbox);
+  previewImg.addEventListener('click', openLightbox);
 
   sstvBtn.addEventListener('click', async () => {
     if (!lastBytes) return;
