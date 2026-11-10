@@ -1,6 +1,6 @@
 {
   "name": "babelcodec",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "Universal encoding, Unicode text, Neural Signal Contract, Morse, Boolean logic, interactive SHA-256 computer, educational CPU, integrated Image Studio (local-first assets + edit + optional generation)",
   "type": "module",
   "main": "src/api/babelcodec.js",
