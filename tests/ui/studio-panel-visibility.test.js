@@ -1,6 +1,6 @@
 /**
  * Image Studio panel visibility — .active + hidden must stay in sync.
- * Regression for empty "ready" shell with no visible workspace.
+ * Default landing is Playground after creative-lab milestone.
  */
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
@@ -186,35 +186,35 @@ describe('Image Studio panel visibility', () => {
     installDom();
   });
 
-  it('defaults to Create with exactly one .active visible panel', async () => {
+  it('defaults to Playground with exactly one .active visible panel', async () => {
     const { createMediaLab } = await import('../../src/ui/studio-ui.js');
     const root = document.createElement('div');
     document.body.appendChild(root);
     const lab = createMediaLab(root, { onDiagnostic: () => {}, onBytes: () => {}, onNavigate: () => {} });
     await Promise.resolve();
     await new Promise((r) => setTimeout(r, 0));
-    assert.equal(lab.getMode(), 'create');
+    assert.equal(lab.getMode(), 'playground');
     const st = lab.getWorkspaceState();
     const active = Object.entries(st.panels).filter(([, p]) => p.classList.contains('active'));
     assert.equal(active.length, 1, `expected 1 active panel, got ${active.length}`);
-    assert.equal(active[0][0], 'create');
+    assert.equal(active[0][0], 'playground');
     assert.equal(active[0][1].hidden, false);
     for (const [k, p] of Object.entries(st.panels)) {
-      if (k === 'create') continue;
+      if (k === 'playground') continue;
       assert.equal(p.classList.contains('active'), false, `${k} must not be active`);
       assert.equal(p.hidden, true, `${k} must be hidden`);
     }
-    assert.ok(st.modeButtons.create.classList.contains('active'));
+    assert.ok(st.modeButtons.playground.classList.contains('active'));
   });
 
-  it('setMode toggles .active and hidden for all five modes', async () => {
+  it('setMode toggles .active and hidden for all six modes', async () => {
     const { createMediaLab } = await import('../../src/ui/studio-ui.js');
     const root = document.createElement('div');
     document.body.appendChild(root);
     const lab = createMediaLab(root, { onDiagnostic: () => {}, onBytes: () => {}, onNavigate: () => {} });
     await Promise.resolve();
     await new Promise((r) => setTimeout(r, 0));
-    for (const id of ['create', 'convert', 'inspect', 'batch', 'generate']) {
+    for (const id of ['playground', 'create', 'convert', 'inspect', 'batch', 'generate']) {
       lab.setMode(id);
       assert.equal(lab.getMode(), id);
       const st = lab.getWorkspaceState();
@@ -231,7 +231,7 @@ describe('Image Studio panel visibility', () => {
     }
   });
 
-  it('create mode status describes canvas size', async () => {
+  it('playground mode status describes local creative readiness', async () => {
     const { createMediaLab } = await import('../../src/ui/studio-ui.js');
     const root = document.createElement('div');
     document.body.appendChild(root);
@@ -244,8 +244,6 @@ describe('Image Studio panel visibility', () => {
     await Promise.resolve();
     await new Promise((r) => setTimeout(r, 0));
     const joined = msgs.join('\n');
-    assert.match(joined, /Create workspace ready/i);
-    assert.match(joined, /800/);
-    assert.match(joined, /600/);
+    assert.match(joined, /Playground ready/i);
   });
 });
