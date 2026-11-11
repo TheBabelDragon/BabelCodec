@@ -52,7 +52,7 @@ export function planMutations(parentSeed, count = 4) {
 export function applyMutationOps(imageData, ops) {
   let cur = imageData;
   for (const op of ops || []) {
-    if (op.type === 'brightness' || op.type === 'contrast' || op.type === 'grayscale) {
+    if (op.type === 'brightness' || op.type === 'contrast' || op.type === 'grayscale') {
       cur = adjustImageData(cur, op.params);
     } else if (op.type === 'flip') {
       cur = flipImageData(cur, op.params.axis || 'x');
