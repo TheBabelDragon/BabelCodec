@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   planMutations,
@@ -6,6 +6,24 @@ import {
   renderMutationPlans,
   hashImageData,
 } from '../../src/media/creative/mutation.js';
+
+before(() => {
+  if (typeof globalThis.ImageData === 'undefined') {
+    globalThis.ImageData = class ImageData {
+      constructor(dataOrW, height, maybeH) {
+        if (typeof dataOrW === 'number') {
+          this.width = dataOrW;
+          this.height = height;
+          this.data = new Uint8ClampedArray(dataOrW * height * 4);
+        } else {
+          this.data = dataOrW;
+          this.width = height;
+          this.height = maybeH;
+        }
+      }
+    };
+  }
+});
 
 function solid(w, h, r, g, b) {
   const im = new ImageData(w, h);
@@ -24,7 +42,10 @@ describe('mutation lab', () => {
     const b = planMutations('seed-x', 4);
     assert.deepEqual(a, b);
     const c = planMutations('seed-y', 4);
-    assert.notDeepEqual(a.map((p) => p.seed), c.map((p) => p.seed));
+    assert.notDeepEqual(
+      a.map((p) => p.seed),
+      c.map((p) => p.seed),
+    );
   });
 
   it('applyMutationOps does not mutate source buffer', () => {
@@ -33,12 +54,15 @@ describe('mutation lab', () => {
     const out = applyMutationOps(src, [{ type: 'brightness', params: { brightness: 1.5 } }]);
     assert.deepEqual([...src.data], [...copy]);
     assert.equal(out.width, 8);
-    assert.ok(out.data[0] !== 10 || out.data[0] === clampExpect(10 * 1.5));
+    assert.notEqual(out.data[0], 10);
   });
 
   it('same ops produce same hash', () => {
     const src = solid(16, 16, 40, 80, 120);
-    const ops = [{ type: 'contrast', params: { contrast: 1.2 } }, { type: 'grayscale', params: { grayscale: true } }];
+    const ops = [
+      { type: 'contrast', params: { contrast: 1.2 } },
+      { type: 'grayscale', params: { grayscale: true } },
+    ];
     const a = applyMutationOps(src, ops);
     const b = applyMutationOps(src, ops);
     assert.equal(hashImageData(a), hashImageData(b));
@@ -56,7 +80,3 @@ describe('mutation lab', () => {
     }
   });
 });
-
-function clampExpect(v) {
-  return v < 0 ? 0 : v > 255 ? 255 : v | 0;
-}
