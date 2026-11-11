@@ -1,9 +1,195 @@
-/* Image Studio — functional integration additions for Playground mutation grid */
+/* Image Studio shell — modes, panels, generation, playground */
 
+.media-lab.image-studio,
+#media-root.image-studio {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+  height: 100%;
+}
+
+.studio-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+  flex: 1;
+}
+
+.studio-mode-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--border, #2a3140);
+}
+
+.studio-mode-btn {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted, #9aa3b2);
+  padding: 0.4rem 0.7rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.studio-mode-btn.active {
+  color: var(--text, #e8eaed);
+  background: rgba(74, 125, 255, 0.15);
+  border-color: var(--accent, #4a7dff);
+}
+
+.studio-panel {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.studio-panel.active {
+  display: block;
+}
+
+.studio-panel[hidden] {
+  display: none !important;
+}
+
+.studio-status {
+  font-size: 0.85rem;
+  color: var(--text-muted, #9aa3b2);
+}
+
+.studio-btn {
+  appearance: none;
+  border: 1px solid var(--border, #2a3140);
+  background: var(--panel, #1c2029);
+  color: inherit;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.studio-btn.primary {
+  background: rgba(74, 125, 255, 0.2);
+  border-color: var(--accent, #4a7dff);
+}
+
+.studio-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.studio-input,
+.studio-select {
+  background: #12151a;
+  border: 1px solid var(--border, #2a3140);
+  color: inherit;
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+  width: 100%;
+  max-width: 100%;
+}
+
+.studio-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.studio-side-title {
+  font-weight: 600;
+  margin: 0.5rem 0;
+  font-size: 0.95rem;
+}
+
+.studio-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.studio-edit-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.5rem 0;
+}
+
+.studio-edit-btn {
+  font-size: 0.85rem;
+}
+
+.studio-preview {
+  max-width: 100%;
+  border: 1px solid var(--border, #2a3140);
+  border-radius: 8px;
+  background: #0d1117;
+}
+
+.studio-dropzone {
+  border: 1px dashed var(--border, #2a3140);
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-muted, #9aa3b2);
+}
+
+.studio-dropzone.drag {
+  border-color: var(--accent, #4a7dff);
+  background: rgba(74, 125, 255, 0.08);
+}
+
+.gen-prompt {
+  width: 100%;
+  min-height: 4rem;
+  background: #12151a;
+  border: 1px solid var(--border, #2a3140);
+  color: inherit;
+  border-radius: 6px;
+  padding: 0.5rem;
+  font: inherit;
+  resize: vertical;
+}
+
+.gen-job-details {
+  white-space: pre-wrap;
+  font-size: 0.8rem;
+  background: #0d1117;
+  border: 1px solid var(--border, #2a3140);
+  border-radius: 6px;
+  padding: 0.5rem;
+  max-height: 16rem;
+  overflow: auto;
+}
+
+.gen-hint {
+  font-size: 0.85rem;
+  color: var(--text-muted, #9aa3b2);
+}
+
+.gen-config-banner {
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  background: rgba(201, 162, 39, 0.12);
+  border: 1px solid rgba(201, 162, 39, 0.35);
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+}
+
+/* Playground functional integration */
 .pg-intro,
 .pg-intel {
   margin: 0 0 0.75rem;
-  color: var(--muted, #9aa3b2);
+  color: var(--text-muted, #9aa3b2);
   font-size: 0.9rem;
   line-height: 1.4;
 }
@@ -43,7 +229,7 @@
 
 .pg-starter-desc {
   font-size: 0.8rem;
-  color: var(--muted, #9aa3b2);
+  color: var(--text-muted, #9aa3b2);
 }
 
 .pg-intent,
@@ -90,7 +276,7 @@
 
 .pg-mut-label {
   font-size: 0.7rem;
-  color: var(--muted, #9aa3b2);
+  color: var(--text-muted, #9aa3b2);
   text-align: center;
   word-break: break-word;
 }
