@@ -1,6 +1,7 @@
 /**
- * Image Studio — Create · Convert · Inspect · Batch · Generate
- * Panel visibility: setMode always toggles .active in sync with hidden.
+ * Image Studio — Playground · Create · Convert · Inspect · Batch · Generate
+ * Panel visibility: setMode toggles .active with hidden.
+ * Playground: local starters, heuristic intent, mutation plans (no remote required).
  */
 
 import {
@@ -40,30 +41,22 @@ import {
   adjustImageData,
   createEditHistory,
 } from '../media/edit/index.js';
+import { buildPlaygroundPanel } from './playground-panel.js';
 
-/**
- * @param {HTMLElement} root
- * @param {{ onDiagnostic?: Function, onBytes?: Function, onNavigate?: Function }} options
- */
 export function createMediaLab(root, options = {}) {
   const onDiagnostic = options.onDiagnostic || (() => {});
   const onBytes = options.onBytes || (() => {});
   const onNavigate = options.onNavigate || (() => {});
 
-  /** @type {'create'|'convert'|'inspect'|'batch'|'generate'} */
-  let mode = 'create';
-  /** @type {Uint8Array|null} */
+  /** @type {'playground'|'create'|'convert'|'inspect'|'batch'|'generate'} */
+  let mode = 'playground';
   let sourceBytes = null;
   let sourceName = '';
-  /** @type {string|null} */
   let previewUrl = null;
   let loadGen = 0;
-  /** @type {ReturnType<typeof createScene>} */
   let scene = createScene(800, 600, '#1c2029');
   let selectedId = null;
-  /** @type {ReturnType<typeof createBatchQueue>} */
   const batch = createBatchQueue(24);
-  /** @type {HTMLCanvasElement|null} */
   let createCanvas = null;
   let generateApi = null;
   let wInput, hInput, bgInput, objList;
@@ -77,6 +70,7 @@ export function createMediaLab(root, options = {}) {
   const shell = el('div', 'studio-shell');
   const modeNav = el('div', 'studio-mode-nav');
   const modes = [
+    ['playground', 'Playground'],
     ['create', 'Create'],
     ['convert', 'Convert'],
     ['inspect', 'Inspect'],
@@ -93,6 +87,7 @@ export function createMediaLab(root, options = {}) {
   }
 
   const panels = {
+    playground: el('div', 'studio-panel studio-panel-playground'),
     create: el('div', 'studio-panel studio-panel-create'),
     convert: el('div', 'studio-panel studio-panel-convert'),
     inspect: el('div', 'studio-panel studio-panel-inspect'),
@@ -106,6 +101,7 @@ export function createMediaLab(root, options = {}) {
 
   shell.append(
     modeNav,
+    panels.playground,
     panels.create,
     panels.convert,
     panels.inspect,
@@ -114,19 +110,6 @@ export function createMediaLab(root, options = {}) {
     statusBar,
   );
   root.appendChild(shell);
-
-  buildCreate(panels.create);
-  buildConvert(panels.convert);
-  buildInspect(panels.inspect);
-  buildBatch(panels.batch);
-  generateApi = buildGeneratePanel(panels.generate, {
-    el,
-    btn,
-    setStatus,
-    notifyBytes,
-    onNavigate,
-  });
-  setMode('create');
 
   function el(tag, cls) {
     const n = document.createElement(tag);
@@ -165,7 +148,9 @@ export function createMediaLab(root, options = {}) {
       setStatus('Image Studio initialization error: workspace panel not visible');
       return;
     }
-    if (id === 'create') {
+    if (id === 'playground') {
+      setStatus('Playground ready — local starters, intent, mutation (no remote required)');
+    } else if (id === 'create') {
       setStatus(`Create workspace ready — ${scene.width} × ${scene.height} canvas`);
     } else if (id === 'convert') {
       setStatus('Convert workspace ready — import, local edit, export');
@@ -197,6 +182,13 @@ export function createMediaLab(root, options = {}) {
         })
         .catch(() => {});
     }
+  }
+
+  function labelWrap(lab, input) {
+    const w = el('label', 'studio-field');
+    w.textContent = lab + ' ';
+    w.appendChild(input);
+    return w;
   }
 
   function buildCreate(panel) {
@@ -252,12 +244,6 @@ export function createMediaLab(root, options = {}) {
     objList = el('div', 'studio-obj-list');
     panel.append(toolbar, tools, canvasWrap, objList, exportRow);
     redrawCreate();
-  }
-  function labelWrap(lab, input) {
-    const w = el('label', 'studio-field');
-    w.textContent = lab + ' ';
-    w.appendChild(input);
-    return w;
   }
   function applyCanvasSize() {
     const w = Math.max(1, parseInt(wInput.value, 10) || 800);
@@ -591,7 +577,8 @@ export function createMediaLab(root, options = {}) {
   }
   function refreshInspect() {
     if (!sourceBytes) {
-      inspectMeta.textContent = 'No file loaded. Use Convert, Batch, or Generate.';
+      inspectMeta.textContent =
+        'No file loaded. Use Convert, Batch, Generate, or Playground starters then export.';
       inspectBoxes.textContent = '';
       return;
     }
@@ -746,6 +733,35 @@ export function createMediaLab(root, options = {}) {
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
+
+  buildCreate(panels.create);
+  buildConvert(panels.convert);
+  buildInspect(panels.inspect);
+  buildBatch(panels.batch);
+  generateApi = buildGeneratePanel(panels.generate, {
+    el,
+    btn,
+    setStatus,
+    notifyBytes,
+    onNavigate,
+  });
+  buildPlaygroundPanel(panels.playground, {
+    el,
+    btn,
+    setStatus,
+    setMode,
+    getScene: () => scene,
+    setScene: (s) => {
+      scene = s;
+      selectedId = null;
+    },
+    redrawCreate,
+    wInput: () => wInput,
+    hInput: () => hInput,
+    bgInput: () => bgInput,
+    labelWrap,
+  });
+  setMode('playground');
 
   return {
     setMode,

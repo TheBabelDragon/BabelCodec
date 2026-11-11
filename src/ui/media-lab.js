@@ -1,5 +1,5 @@
 /**
- * Image Studio entry — re-exports Create/Convert/Inspect/Batch/Generate workbench.
+ * Image Studio entry — re-exports Playground/Create/Convert/Inspect/Batch/Generate.
  * Query on studio-ui forces clients past stale module caches after UI fixes.
  */
-export { createMediaLab } from './studio-ui.js?v=0.11.2';
+export { createMediaLab } from './studio-ui.js?v=0.12.0';

@@ -10,7 +10,7 @@ import { createSha256Lab } from './sha256-lab.js?v=0.7.0';
 import { createComputerLab } from './computer-lab.js?v=0.7.0';
 import { createTextLab } from './text-lab.js?v=0.7.0';
 import { createCpuLab } from './cpu-lab.js?v=0.7.0';
-import { createMediaLab } from './media-lab.js?v=0.11.2';
+import { createMediaLab } from './media-lab.js?v=0.12.0';
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 let currentBytes = null;
