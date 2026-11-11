@@ -1,19 +1,22 @@
 # Image Studio AI Integration
 
-## What exists
+## Architecture
 
-| Layer | Behavior |
-|-------|----------|
-| TPU registry | `discoverTpuCapabilities` — may return empty / unavailable |
-| Gateway provider | Only when URL configured; secrets never in Pages bundle |
-| Creative intent | **Local heuristic** only in this milestone |
+| Capability | Default source | Notes |
+|------------|----------------|-------|
+| Intent interpretation | `local_heuristic` | `interpretIntent` |
+| Design spec → scene | `local_procedural` | `promptToScene` |
+| Refinement | `local_heuristic` + procedural rebuild | `refinePromptToScene` |
+| Image generation inference | **unavailable** unless models bundled or gateway configured | `runImageInference` |
+| Mutation | `local_procedural` pixel ops | no AI |
 
-## What does not exist yet
+## Honesty policy
 
-- Bundled LLM weights
-- Automatic remote chat completion for design
-- Claiming “AI generated” for heuristic or procedural results
+- Never label heuristic/procedural output as model-generated.
+- Never put API secrets in the GitHub Pages bundle.
+- Never auto-call paid endpoints.
+- Capability discovery via `discoverIntelligenceCapabilities()`.
 
-## Policy
+## Tests
 
-Operations must be labeled local procedural / heuristic, local model inference, or remote (gateway). If unavailable, Create, Playground, Convert, Inspect, Batch, and offline Generate continue to work.
+See `tests/media/prompt-to-artifact.test.js` for unavailable / mock / failure paths.

@@ -10,7 +10,7 @@ import { createSha256Lab } from './sha256-lab.js?v=0.7.0';
 import { createComputerLab } from './computer-lab.js?v=0.7.0';
 import { createTextLab } from './text-lab.js?v=0.7.0';
 import { createCpuLab } from './cpu-lab.js?v=0.7.0';
-import { createMediaLab } from './media-lab.js?v=0.12.0';
+import { createMediaLab } from './media-lab.js?v=0.12.1';
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 let currentBytes = null;
@@ -222,6 +222,18 @@ function init() {
 
   setDiagnostics('Ready. Enter input or load a file.', 'info');
   switchTab('converter');
+
+  // Suite handoff from Image Studio Playground (exact bytes + tab)
+  window.addEventListener('babelcodec:suite-bytes', (ev) => {
+    const bytes = ev.detail?.bytes;
+    if (!bytes) return;
+    currentBytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    pushBytesToViews(currentBytes);
+  });
+  window.addEventListener('babelcodec:suite-navigate', (ev) => {
+    const tab = ev.detail?.tab;
+    if (tab) switchTab(tab);
+  });
 }
 
 function switchTab(name) {
