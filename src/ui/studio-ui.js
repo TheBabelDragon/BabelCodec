@@ -1,1 +1,1 @@
-/** SEE_ARTIFACT */
+export { createMediaLab } from './studio-ui-main.js';
