@@ -1,253 +1,103 @@
-/* BabelCodec Image Studio + Generate + Playground */
+/* Image Studio — functional integration additions for Playground mutation grid */
 
-.media-lab.image-studio,
-.image-studio {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  min-height: 0;
-  height: 100%;
-}
-
-.studio-shell {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  min-height: 0;
-  flex: 1;
-}
-
-.studio-mode-nav {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 0.35rem;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  padding-bottom: 0.15rem;
-}
-
-.studio-mode-btn {
-  flex: 0 0 auto;
-  border: 1px solid var(--border, #2a3140);
-  background: var(--panel, #151922);
-  color: var(--text, #e6eaf2);
-  border-radius: 999px;
-  padding: 0.35rem 0.85rem;
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-
-.studio-mode-btn.active {
-  border-color: var(--accent, #5b9fd4);
-  background: color-mix(in srgb, var(--accent, #5b9fd4) 18%, transparent);
-}
-
-.studio-panel {
-  display: none;
-  min-height: 0;
-  flex: 1;
-}
-
-.studio-panel.active {
-  display: block;
-}
-
-.studio-panel[hidden] {
-  display: none !important;
-}
-
-.studio-status {
-  font-size: 0.8rem;
-  color: var(--muted, #9aa3b5);
-}
-
-.studio-btn {
-  border: 1px solid var(--border, #2a3140);
-  background: var(--panel-2, #1a1f2a);
-  color: var(--text, #e6eaf2);
-  border-radius: 6px;
-  padding: 0.4rem 0.7rem;
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-
-.studio-btn.primary {
-  border-color: var(--accent, #5b9fd4);
-  background: color-mix(in srgb, var(--accent, #5b9fd4) 22%, #1a1f2a);
-}
-
-.studio-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.studio-input,
-.studio-select {
-  width: 100%;
-  background: var(--panel, #151922);
-  border: 1px solid var(--border, #2a3140);
-  color: var(--text, #e6eaf2);
-  border-radius: 6px;
-  padding: 0.35rem 0.5rem;
-  font-size: 0.85rem;
-}
-
-.studio-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  font-size: 0.75rem;
-  color: var(--muted, #9aa3b5);
-}
-
-.studio-side-title {
-  font-size: 0.8rem;
-  font-weight: 600;
-  margin-bottom: 0.35rem;
-}
-
-.studio-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  align-items: flex-end;
-}
-
-.studio-edit-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-top: 0.35rem;
-}
-
-.studio-edit-btn {
-  font-size: 0.8rem;
-}
-
-.studio-preview {
-  max-width: 100%;
-  max-height: min(50vh, 480px);
-  object-fit: contain;
-  border-radius: 8px;
-  background: #0d1017;
-}
-
-.studio-dropzone {
-  border: 1px dashed var(--border, #2a3140);
-  border-radius: 8px;
-  padding: 1rem;
-  text-align: center;
-  color: var(--muted, #9aa3b5);
-  cursor: pointer;
-}
-
-.studio-dropzone.drag {
-  border-color: var(--accent, #5b9fd4);
-}
-
-.gen-layout {
-  display: grid;
-  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr) minmax(160px, 220px);
-  gap: 0.75rem;
-  min-height: 0;
-}
-
-.gen-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  min-width: 0;
-}
-
-.gen-label {
-  font-size: 0.75rem;
-  color: var(--muted, #9aa3b5);
-}
-
-.gen-prompt {
-  width: 100%;
-  min-height: 5rem;
-  resize: vertical;
-  background: var(--panel, #151922);
-  border: 1px solid var(--border, #2a3140);
-  color: var(--text, #e6eaf2);
-  border-radius: 6px;
-  padding: 0.5rem;
+.pg-intro,
+.pg-intel {
+  margin: 0 0 0.75rem;
+  color: var(--muted, #9aa3b2);
   font-size: 0.9rem;
-  font-family: inherit;
+  line-height: 1.4;
 }
 
-.gen-job-details {
-  font-size: 0.7rem;
-  max-height: 8rem;
-  overflow: auto;
-  background: var(--panel, #151922);
-  border: 1px solid var(--border, #2a3140);
-  border-radius: 6px;
-  padding: 0.45rem;
-  white-space: pre-wrap;
-}
-
-.gen-hint {
-  font-size: 0.72rem;
-  color: var(--muted, #9aa3b5);
-  margin: 0;
-}
-
-.pg-intro {
-  font-size: 0.9rem;
-  color: var(--muted, #9aa3b5);
-  margin-bottom: 0.5rem;
-}
 .pg-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-bottom: 0.75rem;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
 }
+
 .pg-starter-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 0.5rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
 }
+
 .pg-starter-card {
   text-align: left;
+  padding: 0.75rem;
   border: 1px solid var(--border, #2a3140);
-  background: var(--panel-2, #1a1f2a);
-  color: var(--text, #e6eaf2);
   border-radius: 8px;
-  padding: 0.65rem 0.75rem;
+  background: var(--panel, #1c2029);
+  color: inherit;
   cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
 }
+
 .pg-starter-card:hover {
-  border-color: var(--accent, #5b9fd4);
+  border-color: var(--accent, #4a7dff);
 }
+
 .pg-starter-title {
   font-weight: 600;
-  font-size: 0.85rem;
+  margin-bottom: 0.25rem;
 }
+
 .pg-starter-desc {
-  font-size: 0.72rem;
-  color: var(--muted, #9aa3b5);
+  font-size: 0.8rem;
+  color: var(--muted, #9aa3b2);
 }
+
 .pg-intent,
-.pg-mutation {
-  margin-bottom: 0.85rem;
+.pg-mutation,
+.pg-history {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border, #2a3140);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.pg-mut-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.pg-mut-card {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.4rem;
+  border: 1px solid var(--border, #2a3140);
+  border-radius: 6px;
+  background: #12151a;
+  color: inherit;
+  cursor: pointer;
 }
-@media (max-width: 900px) {
-  .gen-layout {
-    grid-template-columns: 1fr;
-  }
+
+.pg-mut-card.active {
+  border-color: var(--accent, #4a7dff);
+  box-shadow: 0 0 0 1px var(--accent, #4a7dff);
 }
-@media (max-width: 600px) {
-  .pg-starter-grid {
-    grid-template-columns: 1fr 1fr;
+
+.pg-mut-card canvas {
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  border-radius: 4px;
+}
+
+.pg-mut-label {
+  font-size: 0.7rem;
+  color: var(--muted, #9aa3b2);
+  text-align: center;
+  word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .pg-starter-grid,
+  .pg-mut-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
