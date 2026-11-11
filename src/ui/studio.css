@@ -54,6 +54,11 @@
   display: block;
 }
 
+/* HTML hidden must win over .active if both are ever set incorrectly */
+.studio-panel[hidden] {
+  display: none !important;
+}
+
 .studio-status {
   font-size: 0.8rem;
   color: var(--muted, #9aa3b5);
