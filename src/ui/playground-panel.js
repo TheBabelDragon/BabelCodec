@@ -144,9 +144,6 @@ export function buildPlaygroundPanel(panel, ctx) {
   applyMutBtn.addEventListener('click', () => {
     if (selectedMut < 0 || !lastMutations[selectedMut]) return;
     const { imageData, plan } = lastMutations[selectedMut];
-    // Put pixels onto create canvas via a simple rect-filled approximation is not ideal;
-    // instead push imageData through a temporary canvas → user can export from Convert.
-    // For Create editability we store as background-sized single bitmap note in status.
     try {
       const c = document.createElement('canvas');
       c.width = imageData.width;
@@ -244,6 +241,14 @@ export function buildPlaygroundPanel(panel, ctx) {
     }
     if (typeof onBytes === 'function') onBytes(bytes);
     if (typeof onNavigate === 'function') onNavigate('inspector');
+    try {
+      window.dispatchEvent(new CustomEvent('babelcodec:suite-bytes', { detail: { bytes } }));
+      window.dispatchEvent(
+        new CustomEvent('babelcodec:suite-navigate', { detail: { tab: 'inspector' } }),
+      );
+    } catch {
+      /* non-browser */
+    }
     setStatus(`Sent ${bytes.length} bytes to Hex Inspector`);
   });
   histBox.append(histTitle, restoreBtn, handoffBtn, histList);
@@ -254,7 +259,6 @@ export function buildPlaygroundPanel(panel, ctx) {
 
   panel.append(intro, intel, actions, starterGrid, intentBox, mutBox, histBox, note);
 
-  // auto-restore once
   getDefaultRegistry()
     .restoreAll()
     .then((r) => {
@@ -293,7 +297,6 @@ export function buildPlaygroundPanel(panel, ctx) {
     const count = parseInt(mutCount.value, 10) || 4;
     const plans = planMutations(seed, count);
 
-    // Source: try create canvas pixels; fall back to synthetic gradient
     let source;
     try {
       const scene = getScene();
@@ -308,7 +311,15 @@ export function buildPlaygroundPanel(panel, ctx) {
         if (o.type === 'rect') ctx.fillRect(o.x, o.y, o.w, o.h);
         else if (o.type === 'ellipse') {
           ctx.beginPath();
-          ctx.ellipse(o.x + o.w / 2, o.y + o.h / 2, Math.abs(o.w / 2), Math.abs(o.h / 2), 0, 0, Math.PI * 2);
+          ctx.ellipse(
+            o.x + o.w / 2,
+            o.y + o.h / 2,
+            Math.abs(o.w / 2),
+            Math.abs(o.h / 2),
+            0,
+            0,
+            Math.PI * 2,
+          );
           ctx.fill();
         }
       }
@@ -331,7 +342,6 @@ export function buildPlaygroundPanel(panel, ctx) {
       const canvas = document.createElement('canvas');
       canvas.width = Math.min(120, item.imageData.width);
       canvas.height = Math.min(120, item.imageData.height);
-      // scale draw
       const tmp = document.createElement('canvas');
       tmp.width = item.imageData.width;
       tmp.height = item.imageData.height;
@@ -360,8 +370,7 @@ export function buildPlaygroundPanel(panel, ctx) {
     }
     histList.textContent = items
       .map((m) => {
-        const line = `${m.id}  ${m.source}  ${m.mimeType}  ${m.byteLength}B  parent=${m.parentId || '—'}  hash=${(m.contentHash || '').slice(0, 10)}`;
-        return line;
+        return `${m.id}  ${m.source}  ${m.mimeType}  ${m.byteLength}B  parent=${m.parentId || '—'}  hash=${(m.contentHash || '').slice(0, 10)}`;
       })
       .join('\n');
   }
