@@ -1,5 +1,11 @@
 /**
  * Hex-grid inspector view — virtualized rendering for large buffers.
+ *
+ * Selection model:
+ * - Offsets are zero-based.
+ * - selection.end is exclusive.
+ * - Copy All always uses the full buffer, even when a selection exists.
+ * - Copy Selection requires a non-empty selection.
  */
 
 import * as HexGrid from '../core/hexgrid.js?v=0.2.1';
@@ -7,6 +13,12 @@ import * as Search from '../core/search.js?v=0.2.1';
 import { encodeHex } from '../core/hex.js';
 import { encodeBase64 } from '../core/base64.js';
 import { encodeBinary } from '../core/binary.js';
+import {
+  resolveExportBytes,
+  encodeExportText,
+  exportFilename,
+  writeClipboardText,
+} from '../core/inspector-export.js';
 
 /** Bound to core modules so a stale babelcodec.js cache cannot break the inspector. */
 const BC = {
@@ -18,6 +30,10 @@ const BC = {
   encodeHex,
   encodeBase64,
   encodeBinary,
+  resolveExportBytes,
+  encodeExportText,
+  exportFilename,
+  writeClipboardText,
 };
 
 const ROW_HEIGHT = 22;
@@ -31,6 +47,7 @@ export function createInspectorView(container, opts = {}) {
     searchMatches: [],
     searchIndex: -1,
     scrollOffset: 0,
+    currentOffset: 0,
   };
 
   const onSelectionChange = opts.onSelectionChange || (() => {});
@@ -39,6 +56,16 @@ export function createInspectorView(container, opts = {}) {
   container.innerHTML = '';
   container.classList.add('hex-inspector');
 
+  // —— Status bar (always visible) ——
+  const statusBar = el('div', { className: 'hex-status', role: 'status', 'aria-live': 'polite' });
+  const statusTotal = el('span', { className: 'hex-status-item', dataset: { key: 'total' }, textContent: 'Total: 0 B' });
+  const statusSel = el('span', { className: 'hex-status-item', dataset: { key: 'sel' }, textContent: 'Sel: none' });
+  const statusOffset = el('span', { className: 'hex-status-item', dataset: { key: 'offset' }, textContent: 'Offset: —' });
+  const statusWidth = el('span', { className: 'hex-status-item', dataset: { key: 'width' }, textContent: 'Width: 16' });
+  const statusMatches = el('span', { className: 'hex-status-item', dataset: { key: 'matches' }, textContent: 'Matches: 0' });
+  statusBar.append(statusTotal, statusSel, statusOffset, statusWidth, statusMatches);
+
+  // —— Toolbar ——
   const toolbar = el('div', { className: 'hex-toolbar' });
   const bprSelect = el('select', { 'aria-label': 'Bytes per row' });
   for (const n of [8, 16, 32]) {
@@ -66,24 +93,72 @@ export function createInspectorView(container, opts = {}) {
   const searchBtn = el('button', { type: 'button', className: 'btn', textContent: 'Find' });
   const prevBtn = el('button', { type: 'button', className: 'btn', textContent: '◀' });
   const nextBtn = el('button', { type: 'button', className: 'btn', textContent: '▶' });
+  const clearSearchBtn = el('button', { type: 'button', className: 'btn btn-ghost', textContent: 'Clear search' });
   const matchMeta = el('span', { className: 'diag-meta', textContent: '' });
   const selMeta = el('span', { className: 'sel-meta', textContent: 'No selection' });
 
   toolbar.append(
     el('label', {}, [document.createTextNode('Width '), bprSelect]),
-    jumpInput, jumpBtn, searchInput, searchMode, searchBtn, prevBtn, nextBtn, matchMeta, selMeta,
+    jumpInput, jumpBtn, searchInput, searchMode, searchBtn, prevBtn, nextBtn, clearSearchBtn, matchMeta, selMeta,
   );
 
+  // —— Explicit Copy / Download bar ——
+  // Copy All is independent of selection. Copy Selection requires a non-empty selection.
   const copyBar = el('div', { className: 'hex-copybar' });
-  for (const [fmt, label] of [['hex', 'Copy hex'], ['base64', 'Copy Base64'], ['binary', 'Copy binary'], ['download', 'Download']]) {
-    copyBar.appendChild(el('button', { type: 'button', className: 'btn btn-ghost', textContent: label, dataset: { fmt } }));
+  const copyActions = [
+    { scope: 'all', format: 'hex', label: 'Copy All Hex' },
+    { scope: 'selection', format: 'hex', label: 'Copy Sel Hex' },
+    { scope: 'all', format: 'base64', label: 'Copy All Base64' },
+    { scope: 'selection', format: 'base64', label: 'Copy Sel Base64' },
+    { scope: 'all', format: 'binary', label: 'Copy All Binary' },
+    { scope: 'selection', format: 'binary', label: 'Copy Sel Binary' },
+    { scope: 'all', format: 'bin', label: 'Download All' },
+    { scope: 'selection', format: 'bin', label: 'Download Sel' },
+  ];
+  for (const a of copyActions) {
+    const btn = el('button', {
+      type: 'button',
+      className: 'btn btn-ghost',
+      textContent: a.label,
+      dataset: { scope: a.scope, format: a.format },
+    });
+    copyBar.appendChild(btn);
   }
 
   const scroll = el('div', { className: 'hex-scroll', tabIndex: 0, role: 'grid', 'aria-label': 'Hex inspector grid' });
   const spacer = el('div', { className: 'hex-spacer' });
   const viewport = el('div', { className: 'hex-viewport' });
   scroll.append(spacer, viewport);
-  container.append(toolbar, copyBar, scroll);
+  container.append(statusBar, toolbar, copyBar, scroll);
+
+  function updateStatus() {
+    const total = state.bytes ? state.bytes.length : 0;
+    statusTotal.textContent = `Total: ${total} B`;
+
+    if (state.selection && state.selection.length > 0) {
+      const { start, end, length } = state.selection;
+      // end is exclusive; display inclusive last byte for human readability
+      const last = end - 1;
+      statusSel.textContent = `Sel: ${start}–${last} (len ${length}, end exclusive ${end})`;
+    } else {
+      statusSel.textContent = 'Sel: none';
+    }
+
+    statusOffset.textContent =
+      state.bytes && state.bytes.length
+        ? `Offset: ${state.currentOffset} (0x${state.currentOffset.toString(16).toUpperCase()})`
+        : 'Offset: —';
+
+    statusWidth.textContent = `Width: ${state.bytesPerRow}`;
+    statusMatches.textContent = `Matches: ${state.searchMatches.length}`;
+
+    // Enable / disable selection-scoped buttons
+    const hasSel = !!(state.selection && state.selection.length > 0);
+    for (const btn of copyBar.querySelectorAll('button[data-scope="selection"]')) {
+      btn.disabled = !hasSel;
+      btn.title = hasSel ? '' : 'Select one or more bytes first';
+    }
+  }
 
   function setBytes(bytes) {
     state.bytes = bytes && bytes.length ? new Uint8Array(bytes) : null;
@@ -91,8 +166,10 @@ export function createInspectorView(container, opts = {}) {
     state.searchMatches = [];
     state.searchIndex = -1;
     state.scrollOffset = 0;
+    state.currentOffset = 0;
     render();
     updateSelMeta();
+    updateStatus();
     matchMeta.textContent = '';
   }
 
@@ -106,6 +183,7 @@ export function createInspectorView(container, opts = {}) {
       spacer.style.height = '0px';
       viewport.textContent = '';
       viewport.appendChild(el('div', { className: 'empty-inspector', textContent: 'No bytes to inspect. Convert or load a file.' }));
+      updateStatus();
       return;
     }
 
@@ -160,12 +238,14 @@ export function createInspectorView(container, opts = {}) {
       table.appendChild(rowEl);
     }
     viewport.appendChild(table);
+    updateStatus();
   }
 
   function updateSelMeta() {
     if (!state.selection || !state.bytes) {
       selMeta.textContent = 'No selection';
       onSelectionChange(null, null);
+      updateStatus();
       return;
     }
     const { start, end, length } = state.selection;
@@ -173,12 +253,14 @@ export function createInspectorView(container, opts = {}) {
     const hex = BC.encodeHex(slice, { separator: ' ' });
     selMeta.textContent = `Sel ${start}–${end - 1} (${length} byte${length === 1 ? '' : 's'}) · ${hex.slice(0, 48)}${hex.length > 48 ? '…' : ''}`;
     onSelectionChange(state.selection, slice);
+    updateStatus();
   }
 
   function selectByte(offset, extend) {
     if (!state.bytes || offset < 0 || offset >= state.bytes.length) return;
     const anchor = state.selection?.anchor ?? state.selection?.start ?? null;
     state.selection = BC.selectionFromClick(offset, anchor, state.bytes.length, extend);
+    state.currentOffset = offset;
     render();
     updateSelMeta();
   }
@@ -220,6 +302,7 @@ export function createInspectorView(container, opts = {}) {
         scroll.scrollTop = Math.floor(off / state.bytesPerRow) * ROW_HEIGHT;
       }
       render();
+      updateStatus();
       onDiagnostic(result.count ? `Found ${result.count} match(es)` : 'No matches', result.count ? 'ok' : 'info');
     } catch (e) {
       onDiagnostic(e.message, 'err');
@@ -229,6 +312,15 @@ export function createInspectorView(container, opts = {}) {
   searchBtn.addEventListener('click', runSearch);
   searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(); });
 
+  clearSearchBtn.addEventListener('click', () => {
+    state.searchMatches = [];
+    state.searchIndex = -1;
+    matchMeta.textContent = '';
+    render();
+    updateStatus();
+    onDiagnostic('Search cleared.', 'info');
+  });
+
   nextBtn.addEventListener('click', () => {
     if (!state.searchMatches.length) return;
     state.searchIndex = (state.searchIndex + 1) % state.searchMatches.length;
@@ -236,6 +328,7 @@ export function createInspectorView(container, opts = {}) {
     selectByte(off, false);
     scroll.scrollTop = Math.floor(off / state.bytesPerRow) * ROW_HEIGHT;
     matchMeta.textContent = `Match ${state.searchIndex + 1}/${state.searchMatches.length}`;
+    updateStatus();
   });
   prevBtn.addEventListener('click', () => {
     if (!state.searchMatches.length) return;
@@ -244,6 +337,7 @@ export function createInspectorView(container, opts = {}) {
     selectByte(off, false);
     scroll.scrollTop = Math.floor(off / state.bytesPerRow) * ROW_HEIGHT;
     matchMeta.textContent = `Match ${state.searchIndex + 1}/${state.searchMatches.length}`;
+    updateStatus();
   });
 
   scroll.addEventListener('scroll', () => { window.requestAnimationFrame(render); });
@@ -273,46 +367,75 @@ export function createInspectorView(container, opts = {}) {
     }
   });
 
-  copyBar.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-fmt]');
-    if (!btn || !state.bytes) return;
-    const fmt = btn.dataset.fmt;
-    const slice =
-      state.selection && state.selection.length
-        ? BC.sliceSelection(state.bytes, state.selection)
-        : new Uint8Array(state.bytes);
-    if (slice.length === 0) {
-      onDiagnostic('Nothing to copy.', 'info');
+  async function performExport(scope, format) {
+    if (!state.bytes) {
+      onDiagnostic('No buffer loaded.', 'info');
       return;
     }
-    try {
-      if (fmt === 'download') {
-        const blob = new Blob([slice], { type: 'application/octet-stream' });
+
+    const resolved = BC.resolveExportBytes(state.bytes, scope, state.selection);
+    if (!resolved.ok) {
+      onDiagnostic(resolved.error, 'err');
+      return;
+    }
+
+    const { data, start, end, length } = resolved;
+    const scopeLabel = scope === 'all' ? 'All' : `Sel ${start}–${end - 1}`;
+
+    // Raw binary download
+    if (format === 'bin') {
+      try {
+        const blob = new Blob([data], { type: 'application/octet-stream' });
         const a = document.createElement('a');
         const url = URL.createObjectURL(blob);
         a.href = url;
-        a.download = 'babelcodec-selection.bin';
+        a.download = BC.exportFilename(scope, 'bin', { start, end, length });
         a.click();
         URL.revokeObjectURL(url);
-        onDiagnostic(`Downloaded ${slice.length} byte(s).`, 'ok');
-        return;
+        onDiagnostic(`Downloaded ${scopeLabel}: ${length} byte(s) → ${a.download}`, 'ok');
+      } catch (err) {
+        onDiagnostic(`Download failed: ${err.message}`, 'err');
       }
-      let text;
-      if (fmt === 'hex') text = BC.encodeHex(slice, { separator: ' ' });
-      else if (fmt === 'base64') text = BC.encodeBase64(slice);
-      else if (fmt === 'binary') text = BC.encodeBinary(slice);
-      else return;
-      navigator.clipboard.writeText(text).then(
-        () => onDiagnostic(`Copied ${fmt} (${slice.length} byte(s)).`, 'ok'),
-        () => onDiagnostic('Clipboard write failed.', 'err'),
-      );
+      return;
+    }
+
+    // Textual representations
+    let text;
+    try {
+      text = BC.encodeExportText(data, format);
     } catch (err) {
       onDiagnostic(err.message, 'err');
+      return;
     }
+
+    const clip = await BC.writeClipboardText(text);
+    if (clip.ok) {
+      onDiagnostic(`Copied ${format} (${scopeLabel}, ${length} byte(s)).`, 'ok');
+    } else {
+      onDiagnostic(clip.error || 'Clipboard write failed.', 'err');
+    }
+  }
+
+  copyBar.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-scope][data-format]');
+    if (!btn || btn.disabled) return;
+    const scope = btn.dataset.scope;
+    const format = btn.dataset.format;
+    performExport(scope, format);
   });
 
   render();
-  return { setBytes, getSelection: () => state.selection, getBytes: () => state.bytes, refresh: render };
+  updateStatus();
+  return {
+    setBytes,
+    getSelection: () => state.selection,
+    getBytes: () => state.bytes,
+    refresh: render,
+    // Test / programmatic surface
+    _state: state,
+    _performExport: performExport,
+    _updateStatus: updateStatus,
+  };
 }
 
 function el(tag, attrs = {}, children = []) {
