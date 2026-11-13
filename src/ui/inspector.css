@@ -1,0 +1,58 @@
+/* Hex Inspector — status bar and export controls (Phase 1–2 integrity) */
+
+.hex-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1rem;
+  padding: 0.4rem 1rem;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.hex-status-item {
+  white-space: nowrap;
+}
+
+.hex-status-item[data-key="sel"] {
+  color: var(--text);
+}
+
+.hex-copybar .btn:disabled,
+.hex-editbar .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.hex-copybar .btn:disabled:hover,
+.hex-editbar .btn:disabled:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.hex-editbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.55rem;
+  padding: 0.45rem 1rem;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.hex-editbar .hex-jump {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text);
+  min-width: 3.5rem;
+  max-width: 9rem;
+}
