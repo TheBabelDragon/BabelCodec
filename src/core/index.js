@@ -67,6 +67,21 @@ export {
   writeClipboardText,
 } from './inspector-export.js';
 
+export {
+  createBufferHistory,
+  editByte,
+  insertBytes,
+  deleteRange,
+  replaceRange,
+  selectAll,
+  clearSelection,
+  selectRangeByStartLength,
+  revalidateSelection,
+  parseByteValue,
+} from './buffer-history.js';
+
+export { byteDiff, exportDiffJson } from './byte-diff.js';
+
 // Logic engine (re-exported for convenience; prefer babelcodec/logic subpath)
 export {
   and,
