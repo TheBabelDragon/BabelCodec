@@ -60,6 +60,13 @@ export {
   sliceSelection,
 } from './hexgrid.js';
 
+export {
+  resolveExportBytes,
+  encodeExportText,
+  exportFilename,
+  writeClipboardText,
+} from './inspector-export.js';
+
 // Logic engine (re-exported for convenience; prefer babelcodec/logic subpath)
 export {
   and,
