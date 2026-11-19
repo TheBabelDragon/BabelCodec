@@ -17,7 +17,10 @@ describe('crawler infrastructure', () => {
     const text = readFileSync(path, 'utf8');
     assert.match(text, /User-agent:\s*\*/i);
     assert.match(text, /Allow:\s*\//i);
-    assert.match(text, new RegExp(`Sitemap:\s*${BASE}/sitemap\.xml`));
+    assert.ok(
+      text.includes('Sitemap: ' + BASE + '/sitemap.xml'),
+      'robots.txt must declare absolute sitemap URL'
+    );
   });
 
   it('sitemap.xml is well-formed and uses absolute canonical URLs', () => {
@@ -40,14 +43,14 @@ describe('crawler infrastructure', () => {
     assert.ok(existsSync(path), 'llms.txt missing');
     const text = readFileSync(path, 'utf8');
     assert.match(text, /BabelCodec/i);
-    assert.match(text, new RegExp(BASE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.ok(text.includes(BASE), 'llms.txt should include canonical base URL');
   });
 
   it('every sitemap tool URL has a corresponding HTML file', () => {
     const text = readFileSync(join(root, 'sitemap.xml'), 'utf8');
     const locs = [...text.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
     for (const loc of locs) {
-      const pathPart = loc.slice(BASE.length); // e.g. / or /tools/foo.html
+      const pathPart = loc.slice(BASE.length);
       let filePath;
       if (pathPart === '/' || pathPart === '') {
         filePath = join(root, 'index.html');
