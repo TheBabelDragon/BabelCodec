@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UTF-8 Inspector — BabelCodec</title>
+  <meta name="description" content="Inspect UTF-8 byte sequences, character boundaries, and multi-byte characters offline." />
+  <link rel="canonical" href="https://thebabeldragon.github.io/BabelCodec/tools/utf8-inspector.html" />
+  <meta property="og:title" content="UTF-8 Inspector — BabelCodec" />
+  <meta property="og:description" content="Inspect UTF-8 byte sequences and character boundaries offline." />
+  <meta property="og:url" content="https://thebabeldragon.github.io/BabelCodec/tools/utf8-inspector.html" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary" />
+  <style>
+    :root { color-scheme: dark; --bg: #171a21; --fg: #e6e8ee; --muted: #9aa3b2; --accent: #6ea8fe; --card: #1e2430; --border: #2a3344; --ok: #3dd68c; --err: #f07178; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.55; }
+    a { color: var(--accent); }
+    header, footer { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); }
+    footer { border-top: 1px solid var(--border); border-bottom: none; color: var(--muted); font-size: 0.9rem; }
+    main { max-width: 800px; margin: 0 auto; padding: 1.5rem; }
+    h1 { font-size: 1.55rem; margin: 0 0 0.4rem; }
+    .lead { color: var(--muted); }
+    nav.crumbs { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.75rem; }
+    .panel { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin: 1rem 0; }
+    label { display: block; font-weight: 600; margin-bottom: 0.35rem; }
+    textarea { width: 100%; min-height: 110px; background: #12151c; color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92rem; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
+    button { background: #2a3548; color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: 0.45rem 0.85rem; cursor: pointer; }
+    button.primary { background: #2d4a7a; border-color: #3d5f9a; }
+    .status { min-height: 1.4em; font-size: 0.9rem; color: var(--muted); }
+    .status.ok { color: var(--ok); }
+    .status.err { color: var(--err); }
+    h2 { font-size: 1.15rem; margin-top: 1.75rem; }
+    code { background: #12151c; padding: 0.1rem 0.35rem; border-radius: 4px; }
+  </style>
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"UTF-8 Inspector — BabelCodec","applicationCategory":"DeveloperApplication","operatingSystem":"Web","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"url":"https://thebabeldragon.github.io/BabelCodec/tools/utf8-inspector.html","description":"Inspect UTF-8 byte sequences offline."}
+  </script>
+</head>
+<body>
+  <header>
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="../">BabelCodec</a> · <a href="./">Tools</a> · UTF-8 Inspector</nav>
+    <h1>UTF-8 Inspector</h1>
+    <p class="lead">See how text becomes UTF-8 bytes: offsets, hex, and character boundaries.</p>
+  </header>
+  <main>
+    <section class="panel" aria-label="Inspector">
+      <label for="input">Text input</label>
+      <textarea id="input" spellcheck="false" autocomplete="off" aria-label="Input"></textarea>
+      <div class="row">
+        <button type="button" class="primary" id="btn-convert">Inspect</button>
+        <button type="button" id="btn-example">Load example</button>
+        <button type="button" id="btn-clear">Clear</button>
+        <button type="button" id="btn-copy">Copy output</button>
+      </div>
+      <label for="output">Inspection report</label>
+      <textarea id="output" readonly spellcheck="false" aria-label="Output"></textarea>
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+    </section>
+    <h2>UTF-8 character boundaries</h2>
+    <p>UTF-8 encodes Unicode code points in 1–4 bytes. Leading bytes indicate sequence length; continuation bytes start with bits <code>10</code>.</p>
+    <p><strong>Example:</strong> <code>€</code> is <code>E2 82 AC</code> (three bytes).</p>
+    <h2>Related tools</h2>
+    <ul>
+      <li><a href="unicode-converter.html">Unicode Converter</a></li>
+      <li><a href="hexadecimal-converter.html">Hex Converter</a></li>
+      <li><a href="ascii-converter.html">ASCII Converter</a></li>
+    </ul>
+  </main>
+  <footer><p>BabelCodec · client-side only · <a href="https://github.com/TheBabelDragon/BabelCodec">GitHub</a></p></footer>
+  <script type="module">
+    import { encodeUtf8, encodeHex, analyzeUtf8 } from '../src/core/index.js';
+    const input = document.getElementById('input');
+    const output = document.getElementById('output');
+    const status = document.getElementById('status');
+    function setStatus(msg, kind) { status.textContent = msg || ''; status.className = 'status' + (kind ? ' ' + kind : ''); }
+    async function convert() {
+      try {
+        const bytes = encodeUtf8(input.value);
+        let report = 'Hex: ' + encodeHex(bytes) + '\nBytes: ' + bytes.length + '\n';
+        try {
+          const a = analyzeUtf8(bytes);
+          report += 'Analysis: ' + JSON.stringify(a, null, 2);
+        } catch (e) {
+          report += 'Code points: ' + [...input.value].map(ch => 'U+' + ch.codePointAt(0).toString(16).toUpperCase()).join(' ');
+        }
+        output.value = report;
+        setStatus(`UTF-8 length ${bytes.length} byte(s).`, 'ok');
+      } catch (e) { output.value = ''; setStatus(String(e.message || e), 'err'); }
+    }
+    document.getElementById('btn-convert').addEventListener('click', convert);
+    document.getElementById('btn-example').addEventListener('click', () => { input.value = 'Hello €'; convert(); });
+    document.getElementById('btn-clear').addEventListener('click', () => { input.value = ''; output.value = ''; setStatus('Cleared.'); });
+    document.getElementById('btn-copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(output.value); setStatus('Copied.', 'ok'); } catch { setStatus('Copy failed.', 'err'); } });
+  </script>
+</body>
+</html>
