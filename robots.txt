@@ -1,0 +1,8 @@
+# BabelCodec — https://thebabeldragon.github.io/BabelCodec/
+# Allow legitimate public crawlers. Application assets must remain reachable.
+
+User-agent: *
+Allow: /
+
+# Sitemap (GitHub Pages base path)
+Sitemap: https://thebabeldragon.github.io/BabelCodec/sitemap.xml
