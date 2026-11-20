@@ -37,11 +37,12 @@
     "test:ui": "node --test tests/ui/**/*.test.js",
     "test:seo": "node --test tests/seo/**/*.test.js",
     "test:gateway": "node --test services/generation-gateway/test.js",
+    "test:mcp": "node --test services/mcp-server/test.js",
     "test:rust": "cd rust && cargo test -p unicode-core",
     "build:wasm": "node scripts/build-wasm.js",
     "build": "node scripts/build.js",
     "validate": "npm test && npm run build"
   },
-  "keywords": ["encoding", "unicode", "neural", "signal", "contract", "wasm", "rust", "morse", "sha256", "cpu", "workbench", "offline", "heif", "heic", "image", "generation", "procedural", "gateway", "image-studio", "assets"],
+  "keywords": ["encoding", "unicode", "neural", "signal", "contract", "wasm", "rust", "morse", "sha256", "cpu", "workbench", "offline", "heif", "heic", "image", "generation", "procedural", "gateway", "image-studio", "assets", "mcp"],
   "license": "MIT"
 }
