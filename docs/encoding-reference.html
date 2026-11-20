@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Encoding Reference — BabelCodec</title>
+  <meta name="description" content="Reference for binary, bits and bytes, ASCII vs Unicode, UTF-8, hex, Base64, and hashing vs encoding." />
+  <link rel="canonical" href="https://thebabeldragon.github.io/BabelCodec/docs/encoding-reference.html" />
+  <meta property="og:title" content="Encoding Reference — BabelCodec" />
+  <meta property="og:description" content="Bits, bytes, ASCII vs Unicode, UTF-8, hex, Base64, hashing vs encoding." />
+  <meta property="og:url" content="https://thebabeldragon.github.io/BabelCodec/docs/encoding-reference.html" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <style>
+    :root { color-scheme: dark; --bg: #171a21; --fg: #e6e8ee; --muted: #9aa3b2; --accent: #6ea8fe; --card: #1e2430; --border: #2a3344; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.6; }
+    a { color: var(--accent); }
+    header, footer { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); }
+    footer { border-top: 1px solid var(--border); border-bottom: none; color: var(--muted); font-size: 0.9rem; }
+    main { max-width: 800px; margin: 0 auto; padding: 1.5rem; }
+    h1 { font-size: 1.6rem; margin: 0 0 0.4rem; }
+    h2 { font-size: 1.2rem; margin-top: 1.75rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+    .lead { color: var(--muted); }
+    nav.crumbs { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.75rem; }
+    code { background: #12151c; padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.92em; }
+    pre { background: #12151c; border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem 1rem; overflow-x: auto; }
+    ul { padding-left: 1.25rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="../">BabelCodec</a> · <a href="../tools/">Tools</a> · Encoding reference</nav>
+    <h1>Encoding reference</h1>
+    <p class="lead">Concepts behind BabelCodec’s converters and inspectors. Examples use the same semantics as the live workbench.</p>
+  </header>
+  <main>
+    <h2>Binary representation</h2>
+    <p>Computers store data as bits (0 or 1). Eight bits form a byte (values 0–255). Text, images, and machine code are all sequences of bytes interpreted by a convention.</p>
+    <h2>Bits and bytes</h2>
+    <p>A <strong>bit</strong> is the smallest unit. A <strong>byte</strong> is 8 bits. Offsets in the Hex Inspector are byte positions starting at 0.</p>
+    <h2>ASCII versus Unicode</h2>
+    <p><strong>ASCII</strong> covers 128 characters (0–127). <strong>Unicode</strong> assigns a code point to characters across writing systems. BabelCodec’s ASCII path is strict; the UTF-8 path accepts full Unicode text.</p>
+    <h2>UTF-8 byte encoding</h2>
+    <p>UTF-8 encodes each Unicode code point as 1–4 bytes. ASCII characters remain single bytes.</p>
+    <pre>"A"  → 41
+"€"  → E2 82 AC
+"あ" → E3 81 82</pre>
+    <h2>Hexadecimal representation</h2>
+    <p>Each byte is shown as two hex digits (<code>00</code>–<code>ff</code>). Hex is a readable view of the same bytes as binary.</p>
+    <h2>Base64 versus binary</h2>
+    <p>Base64 maps binary data to a 64-character ASCII alphabet so it can travel through text-only channels. It is reversible and is <em>not</em> encryption.</p>
+    <h2>Text encoding versus hashing</h2>
+    <p><strong>Encoding</strong> (UTF-8, hex, Base64, Morse) is reversible when the rules are followed. <strong>Hashing</strong> (SHA-256) is one-way: the digest does not recover the original input.</p>
+    <h2>Try it</h2>
+    <ul>
+      <li><a href="../tools/binary-to-text.html">Binary to Text</a></li>
+      <li><a href="../tools/hexadecimal-converter.html">Hexadecimal Converter</a></li>
+      <li><a href="../tools/base64.html">Base64</a></li>
+      <li><a href="../tools/utf8-inspector.html">UTF-8 Inspector</a></li>
+      <li><a href="../tools/sha256-hash.html">SHA-256</a></li>
+      <li><a href="../">Full BabelCodec workbench</a></li>
+    </ul>
+  </main>
+  <footer>
+    <p>BabelCodec · offline-first · <a href="https://github.com/TheBabelDragon/BabelCodec">GitHub</a></p>
+  </footer>
+</body>
+</html>
