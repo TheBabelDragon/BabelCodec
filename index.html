@@ -5,12 +5,51 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#171a21" />
   <meta name="color-scheme" content="dark" />
-  <meta name="description" content="BabelCodec — offline-first encoding, Unicode text lab, Morse, SHA-256 computer, educational CPU, Image Studio." />
-  <title>BabelCodec — Byte & Symbolic Workbench</title>
+  <title>BabelCodec — Universal Encoding & Binary Workbench</title>
+  <meta name="description" content="Offline-first encoding and decoding workbench: binary, hex, Base64, ASCII, UTF-8, Morse, SHA-256, Unicode text lab, and image studio. Client-side only." />
+  <link rel="canonical" href="https://thebabeldragon.github.io/BabelCodec/" />
+  <meta property="og:title" content="BabelCodec — Universal Encoding & Binary Workbench" />
+  <meta property="og:description" content="Offline-first encoding, decoding, binary inspection, Morse, SHA-256, and Unicode text lab. Runs in your browser." />
+  <meta property="og:url" content="https://thebabeldragon.github.io/BabelCodec/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="BabelCodec" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="BabelCodec — Universal Encoding & Binary Workbench" />
+  <meta name="twitter:description" content="Offline-first encoding, decoding, binary inspection, Morse, SHA-256, and Unicode text lab." />
   <link rel="stylesheet" href="src/ui/styles.css?v=0.12.1" />
   <link rel="stylesheet" href="src/ui/lab-layout.css?v=0.12.1" />
   <link rel="stylesheet" href="src/ui/studio.css?v=0.12.1" />
   <link rel="stylesheet" href="src/ui/inspector.css?v=0.12.2" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "BabelCodec",
+    "url": "https://thebabeldragon.github.io/BabelCodec/",
+    "description": "Offline-first universal encoding, decoding, and binary inspection workbench.",
+    "publisher": {
+      "@type": "Organization",
+      "name": "TheBabelDragon",
+      "url": "https://github.com/TheBabelDragon"
+    }
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "BabelCodec",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Web",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "url": "https://thebabeldragon.github.io/BabelCodec/",
+    "description": "Offline-first encoding, decoding, Unicode text lab, Morse, SHA-256 computer, educational CPU, and Image Studio."
+  }
+  </script>
 </head>
 <body>
   <header class="app-header">
@@ -31,7 +70,7 @@
     </nav>
     <div class="header-actions">
       <span id="file-meta" class="diag-meta"></span>
-      <button type="button" class="btn btn-ghost" id="btn-load" title="Load local file">Load file</button>
+      <button type="button" class="btn btn-ghost" id=" inf-load" title="Load local file">Load file</button>
       <input type="file" id="file-input" />
     </div>
   </header>
@@ -126,6 +165,8 @@
   <footer class="app-footer">
     <span>BabelCodec v0.12.1 · offline · client-side only · Unicode Core WASM</span>
     <span>
+      <a href="tools/">Tools</a>
+      ·
       <a href="https://github.com/TheBabelDragon/BabelCodec">GitHub</a>
       · TheBabelDragon
     </span>
