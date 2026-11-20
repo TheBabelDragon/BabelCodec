@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BabelCodec Tools — Encoding, Decoding & Binary Workbench</title>
+  <meta name="description" content="Index of BabelCodec tools: binary, hex, Base64, ASCII, UTF-8, Morse, SHA-256. Offline-first converters and inspectors." />
+  <link rel="canonical" href="https://thebabeldragon.github.io/BabelCodec/tools/" />
+  <meta property="og:title" content="BabelCodec Tools" />
+  <meta property="og:description" content="Offline-first encoding tools: binary, hex, Base64, ASCII, UTF-8, Morse, SHA-256." />
+  <meta property="og:url" content="https://thebabeldragon.github.io/BabelCodec/tools/" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary" />
+  <style>
+    :root { color-scheme: dark; --bg: #171a21; --fg: #e6e8ee; --muted: #9aa3b2; --accent: #6ea8fe; --card: #1e2430; --border: #2a3344; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.55; }
+    a { color: var(--accent); }
+    header, footer { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); }
+    footer { border-top: 1px solid var(--border); border-bottom: none; color: var(--muted); font-size: 0.9rem; }
+    main { max-width: 900px; margin: 0 auto; padding: 1.5rem; }
+    h1 { font-size: 1.6rem; margin: 0 0 0.4rem; }
+    .lead { color: var(--muted); margin-bottom: 1.5rem; }
+    nav.crumbs { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.75rem; }
+    .grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; }
+    .card h2 { font-size: 1.05rem; margin: 0 0 0.35rem; }
+    .card p { margin: 0; color: var(--muted); font-size: 0.92rem; }
+  </style>
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"CollectionPage","name":"BabelCodec Tools","url":"https://thebabeldragon.github.io/BabelCodec/tools/","description":"Index of offline encoding and decoding tools."}
+  </script>
+</head>
+<body>
+  <header>
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="../">BabelCodec</a> · Tools</nav>
+    <h1>BabelCodec Tools</h1>
+    <p class="lead">Focused, indexable converters powered by the same client-side engine as the full workbench. No upload required.</p>
+  </header>
+  <main>
+    <div class="grid">
+      <article class="card"><h2><a href="binary-to-text.html">Binary to Text</a></h2><p>Decode binary bit strings to UTF-8 text.</p></article>
+      <article class="card"><h2><a href="text-to-binary.html">Text to Binary</a></h2><p>Encode text as space-separated 8-bit groups.</p></article>
+      <article class="card"><h2><a href="binary-decoder.html">Binary Decoder</a></h2><p>Validate and decode binary representations.</p></article>
+      <article class="card"><h2><a href="binary-encoder.html">Binary Encoder</a></h2><p>Encode UTF-8 text to binary bitstrings.</p></article>
+      <article class="card"><h2><a href="hexadecimal-converter.html">Hexadecimal Converter</a></h2><p>Encode or decode hex and text.</p></article>
+      <article class="card"><h2><a href="base64.html">Base64 Encoder/Decoder</a></h2><p>Reversible Base64 for binary-safe transport.</p></article>
+      <article class="card"><h2><a href="ascii-converter.html">ASCII Converter</a></h2><p>Strict ASCII encode/decode (0–127 only).</p></article>
+      <article class="card"><h2><a href="utf8-inspector.html">UTF-8 Inspector</a></h2><p>Inspect UTF-8 bytes and character boundaries.</p></article>
+      <article class="card"><h2><a href="unicode-converter.html">Unicode Converter</a></h2><p>Unicode text via UTF-8 encoding.</p></article>
+      <article class="card"><h2><a href="morse-code.html">Morse Code Translator</a></h2><p>Text ↔ International Morse code.</p></article>
+      <article class="card"><h2><a href="sha256-hash.html">SHA-256 Hash</a></h2><p>One-way SHA-256 digests (not reversible encoding).</p></article>
+      <article class="card"><h2><a href="../docs/encoding-reference.html">Encoding Reference</a></h2><p>Bits, bytes, ASCII vs Unicode, UTF-8, hex, Base64, hashing.</p></article>
+      <article class="card"><h2><a href="../">Full workbench</a></h2><p>Hex Inspector, Structure Analyzer, Labs, Image Studio.</p></article>
+    </div>
+  </main>
+  <footer><p>BabelCodec · client-side only · <a href="https://github.com/TheBabelDragon/BabelCodec">GitHub</a></p></footer>
+</body>
+</html>
