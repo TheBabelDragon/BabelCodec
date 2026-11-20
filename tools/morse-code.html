@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Morse Code Translator — BabelCodec</title>
+  <meta name="description" content="Translate text to Morse code and back. Offline International Morse translator." />
+  <link rel="canonical" href="https://thebabeldragon.github.io/BabelCodec/tools/morse-code.html" />
+  <meta property="og:title" content="Morse Code Translator — BabelCodec" />
+  <meta property="og:description" content="Translate text to Morse code and back offline." />
+  <meta property="og:url" content="https://thebabeldragon.github.io/BabelCodec/tools/morse-code.html" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary" />
+  <style>
+    :root { color-scheme: dark; --bg: #171a21; --fg: #e6e8ee; --muted: #9aa3b2; --accent: #6ea8fe; --card: #1e2430; --border: #2a3344; --ok: #3dd68c; --err: #f07178; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.55; }
+    a { color: var(--accent); }
+    header, footer { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); }
+    footer { border-top: 1px solid var(--border); border-bottom: none; color: var(--muted); font-size: 0.9rem; }
+    main { max-width: 800px; margin: 0 auto; padding: 1.5rem; }
+    h1 { font-size: 1.55rem; margin: 0 0 0.4rem; }
+    .lead { color: var(--muted); }
+    nav.crumbs { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.75rem; }
+    .panel { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin: 1rem 0; }
+    label { display: block; font-weight: 600; margin-bottom: 0.35rem; }
+    textarea { width: 100%; min-height: 110px; background: #12151c; color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92rem; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
+    button { background: #2a3548; color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: 0.45rem 0.85rem; cursor: pointer; }
+    button.primary { background: #2d4a7a; border-color: #3d5f9a; }
+    .status { min-height: 1.4em; font-size: 0.9rem; color: var(--muted); }
+    .status.ok { color: var(--ok); }
+    .status.err { color: var(--err); }
+    h2 { font-size: 1.15rem; margin-top: 1.75rem; }
+    code { background: #12151c; padding: 0.1rem 0.35rem; border-radius: 4px; }
+  </style>
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Morse Code Translator — BabelCodec","applicationCategory":"DeveloperApplication","operatingSystem":"Web","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"url":"https://thebabeldragon.github.io/BabelCodec/tools/morse-code.html","description":"Translate text to Morse code and back offline."}
+  </script>
+</head>
+<body>
+  <header>
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="../">BabelCodec</a> · <a href="./">Tools</a> · Morse Code</nav>
+    <h1>Morse Code Translator</h1>
+    <p class="lead">Convert text ↔ Morse code using BabelCodec’s Morse codec.</p>
+  </header>
+  <main>
+    <section class="panel" aria-label="Translator">
+      <label for="input">Input (text or Morse)</label>
+      <textarea id="input" spellcheck="false" autocomplete="off" aria-label="Input"></textarea>
+      <div class="row">
+        <button type="button" class="primary" id="btn-convert">Convert</button>
+        <button type="button" id="btn-example">Load example</button>
+        <button type="button" id="btn-clear">Clear</button>
+        <button type="button" id="btn-copy">Copy output</button>
+      </div>
+      <label for="output">Output</label>
+      <textarea id="output" readonly spellcheck="false" aria-label="Output"></textarea>
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+    </section>
+    <h2>Morse code</h2>
+    <p>Morse code maps letters and digits to patterns of dots and dashes. This tool uses the same Morse profiles as the main workbench.</p>
+    <p><strong>Example:</strong> <code>HI → .... ..</code></p>
+    <h2>Related tools</h2>
+    <ul>
+      <li><a href="text-to-binary.html">Text to Binary</a></li>
+      <li><a href="ascii-converter.html">ASCII Converter</a></li>
+      <li><a href="../">Full workbench</a></li>
+    </ul>
+  </main>
+  <footer><p>BabelCodec · client-side only · <a href="https://github.com/TheBabelDragon/BabelCodec">GitHub</a></p></footer>
+  <script type="module">
+    import { encodeMorse, decodeMorse } from '../src/core/index.js';
+    const input = document.getElementById('input');
+    const output = document.getElementById('output');
+    const status = document.getElementById('status');
+    function setStatus(msg, kind) { status.textContent = msg || ''; status.className = 'status' + (kind ? ' ' + kind : ''); }
+    async function convert() {
+      try {
+        const v = input.value.trim();
+        if (/^[.\-\s\/]+$/.test(v)) {
+          const text = decodeMorse(v);
+          output.value = typeof text === 'string' ? text : new TextDecoder().decode(text);
+          setStatus('Decoded Morse → text.', 'ok');
+          return;
+        }
+        const out = encodeMorse(input.value);
+        output.value = typeof out === 'string' ? out : new TextDecoder().decode(out);
+        setStatus('Encoded text → Morse.', 'ok');
+      } catch (e) { output.value = ''; setStatus(String(e.message || e), 'err'); }
+    }
+    document.getElementById('btn-convert').addEventListener('click', convert);
+    document.getElementById('btn-example').addEventListener('click', () => { input.value = 'HELLO'; convert(); });
+    document.getElementById('btn-clear').addEventListener('click', () => { input.value = ''; output.value = ''; setStatus('Cleared.'); });
+    document.getElementById('btn-copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(output.value); setStatus('Copied.', 'ok'); } catch { setStatus('Copy failed.', 'err'); } });
+  </script>
+</body>
+</html>
