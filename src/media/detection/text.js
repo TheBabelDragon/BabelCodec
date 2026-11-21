@@ -30,29 +30,32 @@ export function charRangeToUtf8Bytes(text, charStart, charEnd) {
 }
 
 /**
- * Validate a Base64 candidate string (standard alphabet).
- * Accepts correct padding (0, 1, or 2 '=') and valid unpadded length % 4 !== 1.
+ * Standard Base64 syntax validation (alphabet + padding).
+ * Minimum useful length: 2 body chars + optional padding (e.g. SA==, SGk=).
+ * Syntax validity ≠ high detection confidence.
  * @param {string} token
  * @returns {boolean}
  */
 export function isValidBase64Token(token) {
-  if (!token || token.length < 8) return false;
-  // No whitespace inside token
+  if (!token || typeof token !== 'string') return false;
+  if (token.length < 2) return false;
   if (/\s/.test(token)) return false;
-  // Alphabet + optional padding only at end
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(token)) return false;
-  // '=' only at end, max 2
-  const pad = (token.match(/=+$/) || [''])[0].length;
+
+  const padMatch = token.match(/=+$/);
+  const pad = padMatch ? padMatch[0].length : 0;
   if (pad > 2) return false;
   if (pad && token.indexOf('=') !== token.length - pad) return false;
-  // Body without padding must not be empty
+
   const body = pad ? token.slice(0, -pad) : token;
-  if (!body.length) return false;
-  // Standard Base64: length with padding must be multiple of 4, OR unpadded length % 4 is 2 or 3 (or 0)
+  if (body.length < 2) return false;
+  if (!/^[A-Za-z0-9+/]+$/.test(body)) return false;
+
   if (pad) {
+    // Padded form must be multiple of 4
     if (token.length % 4 !== 0) return false;
   } else {
-    // unpadded: length % 4 cannot be 1
+    // Unpadded: length % 4 cannot be 1
     if (token.length % 4 === 1) return false;
   }
   return true;
@@ -60,25 +63,24 @@ export function isValidBase64Token(token) {
 
 /**
  * Scan text for Base64 tokens without relying on \b after '='.
+ * Minimum match length 4 (covers SA==, SGk=, longer tokens).
  * @param {string} text
  * @returns {{ start: number, end: number, token: string }[]}
  */
 export function scanBase64Tokens(text) {
   const out = [];
-  // Leading boundary: start or non-base64-ish char
-  // Body: alphabet; optional = or == at end; stop before non-alphabet (except padding)
-  const re = /(?:^|[^A-Za-z0-9+/])([A-Za-z0-9+/]{8,}={0,2})(?![A-Za-z0-9+/=])/g;
+  // Min 4 chars so SA== and SGk= are visible; body of at least 2 alphabet chars
+  const re = /(?:^|[^A-Za-z0-9+/])([A-Za-z0-9+/]{2,}={0,2})(?![A-Za-z0-9+/=])/g;
   let m;
   while ((m = re.exec(text))) {
     const token = m[1];
+    if (token.length < 4) continue;
     if (!isValidBase64Token(token)) continue;
-    // Skip pure hex-looking long tokens that are more likely hex (optional conservatism)
-    // Keep them if they contain +/ or padding — those are base64 markers
+    // Pure hex of even length is classified as hex, not base64
     if (/^[0-9a-fA-F]+$/.test(token) && token.length % 2 === 0) continue;
     const start = m.index + (m[0].length - token.length);
     const end = start + token.length;
     out.push({ start, end, token });
-    // Continue after this token
     re.lastIndex = end;
   }
   return out;
@@ -421,12 +423,15 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
     );
   }
 
-  if (isValidBase64Token(cleaned) && cleaned.length >= 8) {
+  if (isValidBase64Token(cleaned) && cleaned.length >= 4) {
+    // Confidence scales with length — short tokens are low confidence
+    const conf =
+      cleaned.length >= 16 ? 0.75 : cleaned.length >= 8 ? 0.55 : 0.35;
     findings.push(
       createFinding({
         type: 'encoded',
         subtype: 'base64',
-        confidence: cleaned.length >= 16 ? 0.75 : 0.5,
+        confidence: conf,
         evidence: ['base64-charset', 'whole-input', `len:${cleaned.length}`],
         offset: 0,
         length: len,
@@ -471,18 +476,19 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
     );
   }
 
-  // Embedded Base64 — no trailing \b (breaks on '=')
   if (!findings.some((f) => f.subtype === 'base64' && f.evidence.includes('whole-input'))) {
     for (const hit of scanBase64Tokens(text)) {
       if (findings.length >= max) break;
       if (budget && budget.units >= budget.max) break;
       if (budget) budget.units += 1;
       const range = charRangeToUtf8Bytes(text, hit.start, hit.end);
+      const conf =
+        hit.token.length >= 16 ? 0.55 : hit.token.length >= 8 ? 0.4 : 0.3;
       findings.push(
         createFinding({
           type: 'encoded',
           subtype: 'base64',
-          confidence: 0.55,
+          confidence: conf,
           evidence: ['base64-token', `len:${hit.token.length}`],
           offset: range.offset,
           length: range.length,

@@ -13,16 +13,15 @@ describe('exact-span nested Base64', () => {
     const r = await detectInput(payload, { decodeNested: true });
     const b64 = r.findings.find((f) => f.subtype === 'base64');
     assert.ok(b64);
-    assert.ok(b64.source_token === token || b64.char_start != null);
+    assert.equal(b64.source_token, token);
+    assert.ok(b64.char_start != null);
     const nested = r.findings.find((f) => f.subtype === 'png' && f.parent_finding_id);
     assert.ok(nested, 'nested PNG from exact token');
     assert.ok(nested.evidence.includes('decoded-coordinate-space'));
   });
 
   it('handles padding = and ==', () => {
-    // "Hi" -> SGk=
     assert.equal(isValidBase64Token('SGk='), true);
-    // "H" -> SA==
     assert.equal(isValidBase64Token('SA=='), true);
     const hits = scanBase64Tokens('prefix SGk= middle SA== end');
     assert.ok(hits.some((h) => h.token === 'SGk='));
