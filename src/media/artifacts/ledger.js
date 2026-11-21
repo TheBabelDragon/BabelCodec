@@ -6,28 +6,11 @@
  */
 
 import { sha256 } from '../../sha256/index.js';
+import { encodeHex } from '../../core/hex.js';
+import { encodeBase64 } from '../../core/base64.js';
+import { decodeUtf8 } from '../../core/utf8.js';
 import { copyBytes } from './representations.js';
 import { snapshotArtifact } from './artifact.js';
-
-/**
- * @typedef {object} LedgerRecord
- * @property {string} recordId
- * @property {string} artifactId
- * @property {number} revision
- * @property {string|null} parentArtifactId
- * @property {number|null} parentRevision
- * @property {string} operationId
- * @property {string} operationName
- * @property {object} [operationParams]
- * @property {string} sourceRepresentation
- * @property {string} destinationRepresentation
- * @property {number} byteLength
- * @property {string|null} sha256
- * @property {object|null} detectionRef
- * @property {number} timestamp
- * @property {boolean} exportAvailable
- * @property {string} storageStatus  // 'memory' | 'persisted' | 'evicted' | 'quota_exceeded'
- */
 
 let recordSeq = 0;
 function nextRecordId() {
@@ -47,17 +30,18 @@ function nextOpId(name) {
  * }} [opts]
  */
 export function createArtifactLedger(opts = {}) {
-  /** @type {Map<string, LedgerRecord>} */
+  /** @type {Map<string, object>} */
   const records = new Map();
-  /** @type {Map<string, Uint8Array>} key = artifactId@revision */
+  /** @type {Map<string, Uint8Array>} */
   const payloads = new Map();
-  /** @type {Map<string, object>} artifact snapshots by artifactId@revision */
+  /** @type {Map<string, object>} */
   const artifacts = new Map();
 
   const maxMemoryRecords = opts.maxMemoryRecords ?? 200;
   const idbName = opts.idbName || 'babelcodec-ledger-v1';
   let idbDisabled = Boolean(opts.disableIdb);
   let idb = null;
+  let restored = false;
 
   function keyOf(artifactId, revision) {
     return `${artifactId}@${revision}`;
@@ -72,15 +56,12 @@ export function createArtifactLedger(opts = {}) {
   }
 
   function getRecord(artifactId, revision) {
-    const k = keyOf(artifactId, revision);
     for (const r of records.values()) {
       if (r.artifactId === artifactId && r.revision === revision) {
         return { ...r };
       }
     }
-    // also allow lookup by record id stored as key
-    const byKey = records.get(k);
-    return byKey ? { ...byKey } : null;
+    return null;
   }
 
   function getBytes(artifactId, revision) {
@@ -93,18 +74,6 @@ export function createArtifactLedger(opts = {}) {
     return a ? snapshotArtifact(a) : null;
   }
 
-  /**
-   * Commit an artifact revision to the ledger.
-   * @param {import('./artifact.js').Artifact} artifact
-   * @param {{
- *     operationName?: string,
- *     operationParams?: object,
- *     sourceRepresentation?: string,
- *     destinationRepresentation?: string,
- *     detectionRef?: object|null,
- *     persist?: boolean,
- *   }} [info]
-   */
   async function commit(artifact, info = {}) {
     const snap = snapshotArtifact(artifact);
     const k = keyOf(snap.id, snap.revision);
@@ -119,7 +88,6 @@ export function createArtifactLedger(opts = {}) {
       }
     }
 
-    /** @type {LedgerRecord} */
     const record = {
       recordId: nextRecordId(),
       artifactId: snap.id,
@@ -139,15 +107,20 @@ export function createArtifactLedger(opts = {}) {
       storageStatus: 'memory',
     };
 
-    // Evict oldest if over memory cap (keep payloads for recent)
+    // Evict oldest in-memory payload if over cap — persisted copy may still exist
     if (records.size >= maxMemoryRecords) {
       const oldest = [...records.values()].sort((a, b) => a.timestamp - b.timestamp)[0];
       if (oldest) {
         const ok = keyOf(oldest.artifactId, oldest.revision);
         payloads.delete(ok);
         artifacts.delete(ok);
-        oldest.storageStatus = 'evicted';
-        oldest.exportAvailable = false;
+        if (oldest.storageStatus === 'persisted') {
+          oldest.storageStatus = 'persisted_cold';
+          oldest.exportAvailable = false; // until restoreAll / load
+        } else {
+          oldest.storageStatus = 'evicted';
+          oldest.exportAvailable = false;
+        }
         records.set(oldest.recordId, oldest);
       }
     }
@@ -162,7 +135,7 @@ export function createArtifactLedger(opts = {}) {
         record.storageStatus = 'persisted';
       } else if (persistResult.reason === 'quota') {
         record.storageStatus = 'quota_exceeded';
-        record.exportAvailable = Boolean(bytes); // still in memory
+        record.exportAvailable = Boolean(bytes);
       }
     }
 
@@ -211,8 +184,62 @@ export function createArtifactLedger(opts = {}) {
   }
 
   /**
-   * Verify stored bytes against recorded hash.
+   * Rehydrate records and payloads from IndexedDB into memory.
+   * Idempotent; in-memory entries win on conflict.
    */
+  async function restoreAll() {
+    const db = await openIdb();
+    if (!db) {
+      restored = true;
+      return { restored: 0, available: false };
+    }
+    const rows = await new Promise((resolve) => {
+      try {
+        const tx = db.transaction('ledger', 'readonly');
+        const req = tx.objectStore('ledger').getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => resolve([]);
+      } catch {
+        resolve([]);
+      }
+    });
+
+    let n = 0;
+    for (const row of rows) {
+      if (!row || !row.recordId) continue;
+      if (!records.has(row.recordId)) {
+        const { bytes: rowBytes, ...meta } = row;
+        records.set(row.recordId, {
+          ...meta,
+          storageStatus: 'persisted',
+          exportAvailable: Boolean(rowBytes),
+        });
+        n += 1;
+      }
+      if (row.bytes) {
+        const k = keyOf(row.artifactId, row.revision);
+        if (!payloads.has(k)) {
+          const buf =
+            row.bytes instanceof Uint8Array
+              ? copyBytes(row.bytes)
+              : copyBytes(new Uint8Array(row.bytes));
+          if (buf) payloads.set(k, buf);
+          const rec = records.get(row.recordId);
+          if (rec) {
+            rec.exportAvailable = true;
+            rec.storageStatus = 'persisted';
+          }
+        }
+      }
+    }
+    restored = true;
+    return { restored: n, available: true };
+  }
+
+  function isRestored() {
+    return restored;
+  }
+
   function verify(artifactId, revision) {
     const rec = getRecord(artifactId, revision);
     if (!rec) return { ok: false, reason: 'missing_record' };
@@ -220,7 +247,12 @@ export function createArtifactLedger(opts = {}) {
     if (!bytes) {
       return {
         ok: false,
-        reason: rec.storageStatus === 'evicted' ? 'evicted' : 'missing_bytes',
+        reason:
+          rec.storageStatus === 'evicted'
+            ? 'evicted'
+            : rec.storageStatus === 'persisted_cold'
+              ? 'not_loaded'
+              : 'missing_bytes',
         record: rec,
       };
     }
@@ -239,49 +271,150 @@ export function createArtifactLedger(opts = {}) {
     };
   }
 
-  /**
-   * Restore a revision as a new working artifact snapshot (does not destroy later revisions).
-   */
   function restore(artifactId, revision) {
     const snap = getArtifactSnapshot(artifactId, revision);
-    if (!snap) return { ok: false, reason: 'missing' };
     const bytes = getBytes(artifactId, revision);
-    if (!bytes && snap.representations.bytes) {
-      // try from snapshot
-      return { ok: true, artifact: snap, warning: 'bytes_from_snapshot_only' };
-    }
-    if (bytes) {
+    if (!snap && !bytes) return { ok: false, reason: 'missing' };
+    if (snap && bytes) {
       snap.representations = {
         ...snap.representations,
         bytes: copyBytes(bytes),
       };
+      return { ok: true, artifact: snap };
     }
-    return { ok: true, artifact: snap };
+    if (snap) return { ok: true, artifact: snap, warning: 'bytes_from_snapshot_only' };
+    // Reconstruct minimal artifact from bytes alone
+    return {
+      ok: true,
+      artifact: {
+        schema: 'babelcodec.artifact.v1',
+        id: artifactId,
+        revision,
+        source: { kind: 'bytes', name: null, mimeType: null, filename: null },
+        representations: { bytes: copyBytes(bytes), text: null, image: null },
+        metadata: { byteLength: bytes.byteLength },
+        hashes: { sha256: getRecord(artifactId, revision)?.sha256 ?? null },
+        provenance: { parentArtifactId: null, parentRevision: null, operation: 'restore' },
+      },
+    };
   }
 
   /**
-   * Export complete output description (no truncation).
+   * Representation-aware export of complete output (never a preview).
+   * @param {string} artifactId
+   * @param {number} revision
+   * @param {'bytes'|'hex'|'base64'|'text'|'json-report'} [format]
    */
   function exportOutput(artifactId, revision, format = 'bytes') {
     const rec = getRecord(artifactId, revision);
-    if (!rec) return { ok: false, reason: 'missing_record' };
+    if (!rec) return { ok: false, reason: 'missing_record', complete: false };
     const bytes = getBytes(artifactId, revision);
     if (!bytes) {
       return {
         ok: false,
-        reason: rec.storageStatus === 'quota_exceeded' ? 'quota_exceeded' : 'missing_bytes',
+        reason:
+          rec.storageStatus === 'quota_exceeded'
+            ? 'quota_exceeded'
+            : rec.storageStatus === 'persisted_cold'
+              ? 'not_loaded'
+              : 'missing_bytes',
         record: rec,
+        complete: false,
         falsePreservation: rec.storageStatus === 'evicted',
       };
     }
-    return {
+
+    const base = {
       ok: true,
       format,
-      bytes: copyBytes(bytes),
       byteLength: bytes.byteLength,
       sha256: rec.sha256,
       record: rec,
       complete: true,
+    };
+
+    if (format === 'bytes') {
+      return { ...base, bytes: copyBytes(bytes) };
+    }
+    if (format === 'hex') {
+      return { ...base, text: encodeHex(bytes), bytes: copyBytes(bytes) };
+    }
+    if (format === 'base64') {
+      return { ...base, text: encodeBase64(bytes), bytes: copyBytes(bytes) };
+    }
+    if (format === 'text') {
+      try {
+        const text = decodeUtf8(bytes);
+        return { ...base, text, bytes: copyBytes(bytes), encoding: 'utf-8' };
+      } catch (e) {
+        return {
+          ok: false,
+          reason: 'not_valid_utf8',
+          message: String(e.message || e),
+          record: rec,
+          complete: false,
+          bytes: copyBytes(bytes),
+        };
+      }
+    }
+    if (format === 'json-report') {
+      return {
+        ...base,
+        text: JSON.stringify(
+          {
+            artifactId,
+            revision,
+            sha256: rec.sha256,
+            byteLength: bytes.byteLength,
+            operationName: rec.operationName,
+            timestamp: rec.timestamp,
+            parentArtifactId: rec.parentArtifactId,
+            parentRevision: rec.parentRevision,
+            detectionRef: rec.detectionRef,
+          },
+          null,
+          2,
+        ),
+        bytes: copyBytes(bytes),
+      };
+    }
+    return { ok: false, reason: 'unknown_format', complete: false, record: rec };
+  }
+
+  /**
+   * Clipboard-oriented copy helper — honest about success.
+   * Does not touch the DOM; returns payload for the UI to write.
+   */
+  function copyOutput(artifactId, revision, options = {}) {
+    const format = options.format || 'text';
+    const exp = exportOutput(artifactId, revision, format);
+    if (!exp.ok) {
+      return {
+        ok: false,
+        reason: exp.reason,
+        claimed: false,
+        complete: false,
+      };
+    }
+    if (format === 'bytes') {
+      return {
+        ok: true,
+        mimeType: 'application/octet-stream',
+        bytes: exp.bytes,
+        claimed: false, // binary clipboard is browser-dependent
+        note: 'Binary payload ready; use download if clipboard binary is unsupported',
+        complete: true,
+        sha256: exp.sha256,
+      };
+    }
+    return {
+      ok: true,
+      mimeType: 'text/plain',
+      text: exp.text,
+      claimed: true,
+      complete: true,
+      sha256: exp.sha256,
+      byteLength: exp.byteLength,
     };
   }
 
@@ -311,6 +444,7 @@ export function createArtifactLedger(opts = {}) {
       payloadCount: payloads.size,
       statuses,
       idbEnabled: !idbDisabled,
+      restored,
     };
   }
 
@@ -322,7 +456,10 @@ export function createArtifactLedger(opts = {}) {
     getArtifactSnapshot,
     verify,
     restore,
+    restoreAll,
+    isRestored,
     exportOutput,
+    copyOutput,
     clear,
     storageSummary,
   };

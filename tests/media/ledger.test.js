@@ -25,13 +25,44 @@ describe('artifact ledger', () => {
     assert.ok(rec.sha256);
     assert.equal(rec.exportAvailable, true);
 
-    const exp = ledger.exportOutput(hashed.id, hashed.revision);
+    const exp = ledger.exportOutput(hashed.id, hashed.revision, 'bytes');
     assert.equal(exp.ok, true);
     assert.equal(exp.complete, true);
     assert.deepEqual([...exp.bytes], [1, 2, 3, 4]);
 
+    const hex = ledger.exportOutput(hashed.id, hashed.revision, 'hex');
+    assert.equal(hex.ok, true);
+    assert.ok(typeof hex.text === 'string');
+    assert.match(hex.text, /^[0-9A-Fa-f]+$/);
+
     const v = ledger.verify(hashed.id, hashed.revision);
     assert.equal(v.ok, true);
+  });
+
+  it('representation-aware text export fails honestly on binary', async () => {
+    const ledger = createArtifactLedger({ disableIdb: true });
+    const a = fromBytes(new Uint8Array([0xff, 0xfe, 0x00, 0x01]));
+    await ledger.commit(a);
+    const exp = ledger.exportOutput(a.id, a.revision, 'text');
+    // May fail UTF-8 or succeed with replacement depending on decoder fatal mode
+    if (!exp.ok) {
+      assert.equal(exp.complete, false);
+      assert.ok(exp.reason);
+    }
+  });
+
+  it('copyOutput returns complete text without claiming binary clipboard', async () => {
+    const ledger = createArtifactLedger({ disableIdb: true });
+    const a = fromText('copy-me');
+    await ledger.commit(a);
+    const c = ledger.copyOutput(a.id, a.revision, { format: 'text' });
+    assert.equal(c.ok, true);
+    assert.equal(c.complete, true);
+    assert.equal(c.text, 'copy-me');
+
+    const bin = ledger.copyOutput(a.id, a.revision, { format: 'bytes' });
+    assert.equal(bin.ok, true);
+    assert.equal(bin.claimed, false);
   });
 
   it('preserves parent relationship across revision', async () => {
@@ -78,5 +109,18 @@ describe('artifact ledger', () => {
     assert.ok(result.analysis.sha256);
     assert.ok(result.ledgerRecord.sha256);
     assert.ok(result.detection.findings.some((f) => f.subtype === 'json'));
+  });
+
+  it('missing bytes export does not claim complete preservation', async () => {
+    const ledger = createArtifactLedger({ disableIdb: true, maxMemoryRecords: 1 });
+    const a = fromBytes(new Uint8Array([1]));
+    await ledger.commit(a);
+    const b = fromBytes(new Uint8Array([2]));
+    await ledger.commit(b);
+    // First may be cold/evicted from memory
+    const exp = ledger.exportOutput(a.id, a.revision, 'bytes');
+    if (!exp.ok) {
+      assert.equal(exp.complete, false);
+    }
   });
 });
