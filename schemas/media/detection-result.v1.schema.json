@@ -55,11 +55,14 @@
         "completeness"
       ],
       "properties": {
-        "finding_id": { "type": "string" },
-        "type": { "type": "string" },
+        "finding_id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
         "subtype": { "type": ["string", "null"] },
         "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
-        "evidence": { "type": "array", "items": { "type": "string" } },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "offset": { "type": "integer", "minimum": 0 },
         "length": { "type": "integer", "minimum": 0 },
         "source_representation": { "type": "string" },
@@ -75,8 +78,14 @@
           ]
         },
         "parent_finding_id": { "type": ["string", "null"] },
-        "relationships": { "type": "array" },
-        "warnings": { "type": "array" },
+        "relationships": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/relationship" }
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "supported": { "type": "boolean" },
         "decoder_available": { "type": "boolean" },
         "alerts": {
@@ -86,10 +95,22 @@
         "source_token": { "type": "string" },
         "char_start": { "type": "integer", "minimum": 0 },
         "char_end": { "type": "integer", "minimum": 0 },
-        "parent_offset": { "type": "number" },
-        "parent_length": { "type": "number" },
+        "parent_offset": { "type": "number", "minimum": 0 },
+        "parent_length": { "type": "number", "minimum": 0 },
         "parent_char_start": { "type": "integer", "minimum": 0 },
         "parent_char_end": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "relationship": {
+      "type": "object",
+      "required": ["kind", "target"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["decoded-from"]
+        },
+        "target": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": true
     },
@@ -101,7 +122,7 @@
           "type": "string",
           "enum": ["info", "warning", "security", "unsupported"]
         },
-        "code": { "type": "string" },
+        "code": { "type": "string", "minLength": 1 },
         "message": { "type": "string" },
         "detail": {}
       },

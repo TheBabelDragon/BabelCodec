@@ -46,5 +46,8 @@
     "validate": "npm test && npm run build"
   },
   "keywords": ["encoding", "unicode", "detection", "artifact-pipeline", "sha256", "cpu", "workbench", "offline", "heif", "image-studio", "mcp"],
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "ajv": "^8.17.1"
+  }
 }
