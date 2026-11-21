@@ -1,8 +1,5 @@
 /**
  * Universal Artifact Pipeline — public surface.
- *
- * Input enters once. Representations flow through shared analysis.
- * Compatible tools receive the artifact as destinations.
  */
 
 export {
@@ -59,61 +56,34 @@ export {
 
 export { ingestInput, analyzePayload } from './pipeline.js';
 
-/** Convenience: create + optionally hash */
 import { fromBytes as _fromBytes, fromText as _fromText } from './representations-service.js';
 import { analyzeArtifact as _analyze } from './analyze.js';
 import { withHash } from './artifact.js';
 
-/**
- * Create artifact from bytes and compute SHA-256 when possible.
- * @param {Uint8Array} bytes
- * @param {object} [opts]
- */
 export async function createHashedArtifactFromBytes(bytes, opts = {}) {
   let art = _fromBytes(bytes, opts);
   const analysis = _analyze(art, { computeHash: true });
-  if (analysis.sha256) {
-    art = withHash(art, analysis.sha256);
-  }
+  if (analysis.sha256) art = withHash(art, analysis.sha256);
   return { artifact: art, analysis };
 }
 
-/**
- * Create artifact from text and compute SHA-256 of UTF-8 bytes.
- * @param {string} text
- * @param {object} [opts]
- */
 export async function createHashedArtifactFromText(text, opts = {}) {
   let art = _fromText(text, opts);
   const analysis = _analyze(art, { computeHash: true });
-  if (analysis.sha256) {
-    art = withHash(art, analysis.sha256);
-  }
+  if (analysis.sha256) art = withHash(art, analysis.sha256);
   return { artifact: art, analysis };
 }
 
-/** Ledger convenience APIs */
 import { getDefaultLedger as _ledger } from './ledger.js';
 
 export function getArtifactHistory(artifactId) {
   return _ledger().listRecords(artifactId);
 }
 
-/**
- * @param {string} artifactId
- * @param {number} revisionId
- * @param {'bytes'|'hex'|'base64'|'text'|'json-report'} [format]
- */
 export function getArtifactOutput(artifactId, revisionId, format = 'bytes') {
   return _ledger().exportOutput(artifactId, revisionId, format);
 }
 
-/**
- * Clipboard-oriented complete output (does not write to clipboard itself).
- * @param {string} artifactId
- * @param {number} revisionId
- * @param {{ format?: string }} [options]
- */
 export function copyArtifactOutput(artifactId, revisionId, options = {}) {
   return _ledger().copyOutput(artifactId, revisionId, options);
 }
@@ -126,7 +96,11 @@ export function restoreArtifactRevision(artifactId, revisionId) {
   return _ledger().restore(artifactId, revisionId);
 }
 
-/** Rehydrate ledger from IndexedDB (browser). */
+/** Restore historical revision as a new working revision. */
+export async function restoreWorkingRevision(artifactId, revisionId) {
+  return _ledger().restoreWorking(artifactId, revisionId);
+}
+
 export async function restoreArtifactLedger() {
   return _ledger().restoreAll();
 }
