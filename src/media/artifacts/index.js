@@ -51,8 +51,15 @@ export {
   destinationToTab,
 } from './router.js';
 
+export {
+  createArtifactLedger,
+  getDefaultLedger,
+  resetDefaultLedger,
+} from './ledger.js';
+
+export { ingestInput, analyzePayload } from './pipeline.js';
+
 /** Convenience: create + optionally hash */
-import { createArtifact as _create } from './artifact.js';
 import { fromBytes as _fromBytes, fromText as _fromText } from './representations-service.js';
 import { analyzeArtifact as _analyze } from './analyze.js';
 import { withHash } from './artifact.js';
@@ -83,4 +90,23 @@ export async function createHashedArtifactFromText(text, opts = {}) {
     art = withHash(art, analysis.sha256);
   }
   return { artifact: art, analysis };
+}
+
+/** Ledger convenience APIs */
+import { getDefaultLedger as _ledger } from './ledger.js';
+
+export function getArtifactHistory(artifactId) {
+  return _ledger().listRecords(artifactId);
+}
+
+export function getArtifactOutput(artifactId, revisionId) {
+  return _ledger().exportOutput(artifactId, revisionId);
+}
+
+export function verifyArtifactOutput(artifactId, revisionId) {
+  return _ledger().verify(artifactId, revisionId);
+}
+
+export function restoreArtifactRevision(artifactId, revisionId) {
+  return _ledger().restore(artifactId, revisionId);
 }
