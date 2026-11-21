@@ -21,6 +21,7 @@
 - **Hardware observability** — live schematic, bit-level adder inspect, memory/bus explorers, rewind/replay
 - **Image Studio** — Create graphics, convert PNG/JPEG/WebP/GIF/BMP/HEIF, inspect, batch; **Generate** images via provider-independent pipeline (offline **procedural** + mock by default)
 - **Optional generation gateway** — separately deployable Node service for remote providers; **no API keys in the browser**
+- **MCP server** — separately deployable Model Context Protocol adapter (`services/mcp-server`) exposing Unicode/text tools via official Streamable HTTP; see [docs/integrations/MCP_SERVER.md](docs/integrations/MCP_SERVER.md)
 - **Signal Processor handoff** — Export PNG + versioned media-job manifest for SSTV encode in [signal-processor](https://github.com/TheBabelDragon/signal-processor)
 - **Zero runtime dependencies** — browser-native APIs + static WASM assets (no remote runtime)
 - **Public JS API** — `babelcodec`, `babelcodec/logic`, `babelcodec/sha256`, `babelcodec/computer`, `babelcodec/text`, `babelcodec/morse`, `babelcodec/scripts`, `babelcodec/media/generation`
@@ -117,6 +118,7 @@ Docs: [docs/integrations/SIGNAL_PROCESSOR.md](docs/integrations/SIGNAL_PROCESSOR
 npm test
 npm run test:text
 npm run test:media
+npm run test:mcp       # MCP server unit + official client interop
 npm run test:rust      # cargo test -p unicode-core
 npm run build:wasm
 npm run build
@@ -145,6 +147,7 @@ npm run validate
 - [TPU Backends](docs/TPU_BACKENDS.md)
 - [Generation Providers](docs/GENERATION_PROVIDERS.md)
 - [Signal Processor integration](docs/integrations/SIGNAL_PROCESSOR.md)
+- [MCP Server](docs/integrations/MCP_SERVER.md)
 
 ## Security
 
