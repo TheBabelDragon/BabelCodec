@@ -5,13 +5,6 @@
 
 import { createFinding, createAlert } from './finding.js';
 
-/**
- * Map a UTF-16 code-unit index range to approximate UTF-8 byte offsets
- * for BMP-heavy text (sufficient for JSON/hex/base64 ASCII spans).
- * @param {string} text
- * @param {number} charStart
- * @param {number} charEnd
- */
 export function charRangeToUtf8Bytes(text, charStart, charEnd) {
   let byteStart = 0;
   for (let i = 0; i < charStart && i < text.length; i++) {
@@ -37,9 +30,60 @@ export function charRangeToUtf8Bytes(text, charStart, charEnd) {
 }
 
 /**
- * @param {Uint8Array} bytes
- * @param {{ skipBomReturn?: boolean }} [opts]
+ * Validate a Base64 candidate string (standard alphabet).
+ * Accepts correct padding (0, 1, or 2 '=') and valid unpadded length % 4 !== 1.
+ * @param {string} token
+ * @returns {boolean}
  */
+export function isValidBase64Token(token) {
+  if (!token || token.length < 8) return false;
+  // No whitespace inside token
+  if (/\s/.test(token)) return false;
+  // Alphabet + optional padding only at end
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(token)) return false;
+  // '=' only at end, max 2
+  const pad = (token.match(/=+$/) || [''])[0].length;
+  if (pad > 2) return false;
+  if (pad && token.indexOf('=') !== token.length - pad) return false;
+  // Body without padding must not be empty
+  const body = pad ? token.slice(0, -pad) : token;
+  if (!body.length) return false;
+  // Standard Base64: length with padding must be multiple of 4, OR unpadded length % 4 is 2 or 3 (or 0)
+  if (pad) {
+    if (token.length % 4 !== 0) return false;
+  } else {
+    // unpadded: length % 4 cannot be 1
+    if (token.length % 4 === 1) return false;
+  }
+  return true;
+}
+
+/**
+ * Scan text for Base64 tokens without relying on \b after '='.
+ * @param {string} text
+ * @returns {{ start: number, end: number, token: string }[]}
+ */
+export function scanBase64Tokens(text) {
+  const out = [];
+  // Leading boundary: start or non-base64-ish char
+  // Body: alphabet; optional = or == at end; stop before non-alphabet (except padding)
+  const re = /(?:^|[^A-Za-z0-9+/])([A-Za-z0-9+/]{8,}={0,2})(?![A-Za-z0-9+/=])/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const token = m[1];
+    if (!isValidBase64Token(token)) continue;
+    // Skip pure hex-looking long tokens that are more likely hex (optional conservatism)
+    // Keep them if they contain +/ or padding — those are base64 markers
+    if (/^[0-9a-fA-F]+$/.test(token) && token.length % 2 === 0) continue;
+    const start = m.index + (m[0].length - token.length);
+    const end = start + token.length;
+    out.push({ start, end, token });
+    // Continue after this token
+    re.lastIndex = end;
+  }
+  return out;
+}
+
 export function probeTextAndEncoding(bytes, opts = {}) {
   const findings = [];
   if (!bytes || bytes.length === 0) {
@@ -91,10 +135,7 @@ export function probeTextAndEncoding(bytes, opts = {}) {
     }
   }
 
-  // Optionally stop after BOM (legacy); default continues for mixed analysis
-  if (bomReturn && opts.skipBomReturn !== false && opts.earlyBomReturn) {
-    return findings;
-  }
+  if (bomReturn && opts.earlyBomReturn) return findings;
 
   if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
     findings.push(
@@ -196,11 +237,6 @@ function extractJsonAt(text, i) {
   return null;
 }
 
-/**
- * @param {string} text
- * @param {number} [byteLength]
- * @param {{ maxFindings?: number, budget?: { units: number, max: number } }} [opts]
- */
 export function probeStructuredText(text, byteLength, opts = {}) {
   const findings = [];
   if (text == null || text.length === 0) return findings;
@@ -359,11 +395,6 @@ export function probeStructuredText(text, byteLength, opts = {}) {
   return findings;
 }
 
-/**
- * @param {string} text
- * @param {number} [byteLength]
- * @param {{ maxFindings?: number, budget?: { units: number, max: number } }} [opts]
- */
 export function probeEncodedForms(text, byteLength, opts = {}) {
   const findings = [];
   if (!text || text.length < 4) return findings;
@@ -390,7 +421,7 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
     );
   }
 
-  if (/^[A-Za-z0-9+/]+=*$/.test(cleaned) && cleaned.length >= 8 && cleaned.length % 4 === 0) {
+  if (isValidBase64Token(cleaned) && cleaned.length >= 8) {
     findings.push(
       createFinding({
         type: 'encoded',
@@ -440,32 +471,36 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
     );
   }
 
-  const b64Re = /\b[A-Za-z0-9+/]{16,}={0,2}\b/g;
-  while ((m = b64Re.exec(text)) && findings.length < max) {
-    if (budget && budget.units >= budget.max) break;
-    if (budget) budget.units += 1;
-    if (m[0].length % 4 !== 0) continue;
-    if (findings.some((f) => f.subtype === 'base64' && f.evidence.includes('whole-input'))) break;
-    if (/^[0-9a-fA-F]+$/.test(m[0])) continue;
-    const range = charRangeToUtf8Bytes(text, m.index, m.index + m[0].length);
-    findings.push(
-      createFinding({
-        type: 'encoded',
-        subtype: 'base64',
-        confidence: 0.55,
-        evidence: ['base64-token', `len:${m[0].length}`],
-        offset: range.offset,
-        length: range.length,
-        completeness: 'complete',
-        decoder_available: true,
-        source_token: m[0],
-        char_start: m.index,
-        char_end: m.index + m[0].length,
-        alerts: [
-          createAlert('info', 'BASE64_CANDIDATE', 'Embedded Base64-like token; not confirmed until decode'),
-        ],
-      }),
-    );
+  // Embedded Base64 — no trailing \b (breaks on '=')
+  if (!findings.some((f) => f.subtype === 'base64' && f.evidence.includes('whole-input'))) {
+    for (const hit of scanBase64Tokens(text)) {
+      if (findings.length >= max) break;
+      if (budget && budget.units >= budget.max) break;
+      if (budget) budget.units += 1;
+      const range = charRangeToUtf8Bytes(text, hit.start, hit.end);
+      findings.push(
+        createFinding({
+          type: 'encoded',
+          subtype: 'base64',
+          confidence: 0.55,
+          evidence: ['base64-token', `len:${hit.token.length}`],
+          offset: range.offset,
+          length: range.length,
+          completeness: 'complete',
+          decoder_available: true,
+          source_token: hit.token,
+          char_start: hit.start,
+          char_end: hit.end,
+          alerts: [
+            createAlert(
+              'info',
+              'BASE64_CANDIDATE',
+              'Embedded Base64-like token; not confirmed until decode',
+            ),
+          ],
+        }),
+      );
+    }
   }
 
   if (/%[0-9a-fA-F]{2}/.test(text) && (text.match(/%[0-9a-fA-F]{2}/g) || []).length >= 2) {
