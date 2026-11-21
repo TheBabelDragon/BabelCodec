@@ -86,13 +86,16 @@ jobs:
 
       - name: Install MCP server dependencies
         run: |
+          set -euo pipefail
           cd services/mcp-server
-          # Include devDependencies for @modelcontextprotocol/client interop tests
-          npm ci 2>/dev/null || npm install
+          # Strict lockfile install; failure must fail the job (no silent fallback).
+          npm ci --registry=https://registry.npmjs.org
 
       - name: Run MCP server tests
         run: |
+          set -euo pipefail
           # Unit + official MCP client interop. WASM already built above.
+          # Must execute after successful npm ci (not skipped).
           npm run test:mcp
 
       - name: Build verification
