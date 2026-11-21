@@ -1,7 +1,7 @@
 {
   "name": "babelcodec",
-  "version": "0.12.1",
-  "description": "Universal encoding, Unicode text, Neural Signal Contract, Morse, Boolean logic, interactive SHA-256 computer, educational CPU, integrated Image Studio (local-first assets + edit + optional generation)",
+  "version": "0.13.0",
+  "description": "Universal encoding, Unicode text, Neural Signal Contract, Morse, Boolean logic, interactive SHA-256 computer, educational CPU, integrated Image Studio with universal artifact pipeline",
   "type": "module",
   "main": "src/api/babelcodec.js",
   "exports": {
@@ -22,7 +22,8 @@
     "./media/assets": "./src/media/assets/index.js",
     "./media/edit": "./src/media/edit/index.js",
     "./media/inference": "./src/media/inference/index.js",
-    "./media/handoff": "./src/media/handoff.js"
+    "./media/handoff": "./src/media/handoff.js",
+    "./media/artifacts": "./src/media/artifacts/index.js"
   },
   "scripts": {
     "test": "node --test tests/**/*.test.js tests/logic/**/*.test.js tests/sha256/**/*.test.js tests/computer/**/*.test.js tests/cpu/**/*.test.js tests/text/**/*.test.js tests/scripts/**/*.test.js tests/morse/**/*.test.js tests/digest/**/*.test.js tests/computer/architecture/**/*.test.js tests/media/**/*.test.js tests/ui/**/*.test.js tests/neural/**/*.test.js tests/seo/**/*.test.js",
@@ -43,6 +44,6 @@
     "build": "node scripts/build.js",
     "validate": "npm test && npm run build"
   },
-  "keywords": ["encoding", "unicode", "neural", "signal", "contract", "wasm", "rust", "morse", "sha256", "cpu", "workbench", "offline", "heif", "heic", "image", "generation", "procedural", "gateway", "image-studio", "assets", "mcp"],
+  "keywords": ["encoding", "unicode", "neural", "signal", "contract", "wasm", "rust", "morse", "sha256", "cpu", "workbench", "offline", "heif", "heic", "image", "generation", "procedural", "gateway", "image-studio", "assets", "mcp", "artifact-pipeline"],
   "license": "MIT"
 }
