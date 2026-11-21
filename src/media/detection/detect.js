@@ -12,10 +12,6 @@ import { probeTextAndEncoding, probeStructuredText, probeEncodedForms } from './
 
 const SCHEMA = 'babelcodec.detection.v1';
 
-/**
- * @param {string|Uint8Array|ArrayBuffer|ArrayBufferView|File|Blob|null|undefined} input
- * @param {{ typeHint?: string }} [opts]
- */
 export async function normalizeInput(input, opts = {}) {
   if (input == null) {
     return { bytes: new Uint8Array(0), text: '', sourceKind: 'empty' };
@@ -54,33 +50,46 @@ export async function normalizeInput(input, opts = {}) {
 }
 
 /**
- * @param {string|Uint8Array|ArrayBuffer|ArrayBufferView|File|Blob} input
- * @param {{
- *   typeHint?: string,
- *   limits?: object,
- *   maxDepth?: number,
- *   decodeNested?: boolean,
- * }} [options]
+ * Extract exact Base64/hex token for a finding.
+ * @param {object} finding
+ * @param {string} text
  */
+function extractToken(finding, text) {
+  if (finding.source_token) return String(finding.source_token).replace(/\s+/g, '');
+  if (
+    typeof finding.char_start === 'number' &&
+    typeof finding.char_end === 'number' &&
+    finding.char_end > finding.char_start
+  ) {
+    return text.slice(finding.char_start, finding.char_end).replace(/\s+/g, '');
+  }
+  if (finding.evidence?.includes('whole-input')) {
+    return text.replace(/\s+/g, '');
+  }
+  return null;
+}
+
 export async function detectInput(input, options = {}) {
   const limits = resolveLimits(options.limits);
   const alerts = [];
   const budget = { units: 0, max: limits.maxWorkUnits };
 
   const normalized = await normalizeInput(input, options);
-  let bytes = normalized.bytes;
+  const originalBytes = normalized.bytes;
+  const originalByteLength = originalBytes.byteLength;
+  let bytes = originalBytes;
+  let truncated = false;
 
   if (bytes.byteLength > limits.maxBytes) {
     alerts.push(
-      createAlert('security', 'SIZE_LIMIT', `Input exceeds maxBytes (${limits.maxBytes}); truncated for scan`),
+      createAlert('security', 'SIZE_LIMIT', `Input exceeds maxBytes (${limits.maxBytes}); scan truncated`),
     );
     bytes = bytes.subarray(0, limits.maxBytes);
+    truncated = true;
   }
 
-  /** @type {object[]} */
   const findings = [];
 
-  // Binary signatures — full scan with live budget
   for (const f of probeBinarySignatures(bytes, {
     maxFindings: limits.maxFindings,
     budget,
@@ -108,59 +117,57 @@ export async function detectInput(input, options = {}) {
   if (text != null && budget.units < budget.max) {
     for (const f of probeStructuredText(text, bytes.byteLength, {
       maxFindings: limits.maxFindings - findings.length,
+      budget,
     })) {
       findings.push(f);
-      budget.units += 2;
       if (budget.units >= budget.max) break;
     }
     if (budget.units < budget.max) {
       for (const f of probeEncodedForms(text, bytes.byteLength, {
         maxFindings: limits.maxFindings - findings.length,
+        budget,
       })) {
         findings.push(f);
-        budget.units += 2;
         if (budget.units >= budget.max) break;
       }
     }
 
-    // Bounded nested Base64 — only for high-confidence whole or token findings
-    if (options.decodeNested !== false && budget.units < budget.max) {
+    const depthLeft = options.maxDepth ?? limits.maxScanDepth;
+    if (options.decodeNested !== false && depthLeft > 0 && budget.units < budget.max) {
       const b64Candidates = findings.filter(
         (f) => f.subtype === 'base64' && f.confidence >= 0.5,
       );
-      for (const b64Finding of b64Candidates.slice(0, 2)) {
+      for (const b64Finding of b64Candidates.slice(0, 3)) {
         if (budget.units >= budget.max) break;
-        if ((options.maxDepth ?? limits.maxScanDepth) <= 0) break;
+        const token = extractToken(b64Finding, text);
+        if (!token) {
+          b64Finding.alerts = [
+            ...(b64Finding.alerts || []),
+            createAlert('warning', 'BASE64_SPAN_MISSING', 'Could not extract exact Base64 source span'),
+          ];
+          continue;
+        }
         try {
-          // Extract the token text from original when possible
-          let token = text;
-          if (b64Finding.offset > 0 || b64Finding.length < bytes.byteLength) {
-            // Prefer evidence length from cleaned whole match
-            const cleanedWhole = text.replace(/\s+/g, '');
-            if (b64Finding.evidence.includes('whole-input')) token = cleanedWhole;
-            else {
-              // Approximate: take a slice of text by char if ASCII
-              token = text.replace(/\s+/g, '');
-            }
-          } else {
-            token = text.replace(/\s+/g, '');
-          }
           if (token.length * 0.75 > limits.maxNestedDecodeBytes) continue;
           const decoded = decodeBase64(token);
           budget.units += 15;
           if (decoded.byteLength <= 0 || decoded.byteLength > limits.maxNestedDecodeBytes) continue;
 
+          // Recursive depth: allow further nesting with decremented depth
           const nested = await detectInput(decoded, {
-            ...options,
-            maxDepth: (options.maxDepth ?? limits.maxScanDepth) - 1,
-            decodeNested: false,
-            limits: { ...limits, maxFindings: 8, maxWorkUnits: Math.max(100, budget.max - budget.units) },
+            typeHint: options.typeHint,
+            maxDepth: depthLeft - 1,
+            decodeNested: depthLeft - 1 > 0,
+            limits: {
+              ...limits,
+              maxFindings: 8,
+              maxWorkUnits: Math.max(50, budget.max - budget.units),
+            },
           });
-          budget.units += 10;
+          budget.units += nested.workUnitsUsed || 10;
 
           for (const nf of nested.findings || []) {
             if (findings.length >= limits.maxFindings) break;
-            // Nested findings live in decoded coordinate space — do not pretend offsets are parent bytes
             findings.push({
               ...nf,
               parent_finding_id: b64Finding.finding_id,
@@ -169,13 +176,14 @@ export async function detectInput(input, options = {}) {
                 { kind: 'decoded-from', target: b64Finding.finding_id },
               ],
               evidence: [...(nf.evidence || []), 'decoded-coordinate-space'],
-              // Keep nested offset as offset within decoded bytes; expose parent span separately
               parent_offset: b64Finding.offset,
               parent_length: b64Finding.length,
+              parent_char_start: b64Finding.char_start,
+              parent_char_end: b64Finding.char_end,
             });
           }
           if (nested.findings?.some((f) => f.type === 'image')) {
-            b64Finding.evidence = [...b64Finding.evidence, 'nested-image-detected'];
+            b64Finding.evidence = [...(b64Finding.evidence || []), 'nested-image-detected'];
             b64Finding.confidence = Math.min(0.95, b64Finding.confidence + 0.15);
           }
         } catch {
@@ -252,7 +260,10 @@ export async function detectInput(input, options = {}) {
 
   return {
     schema: SCHEMA,
+    originalByteLength,
+    scannedByteLength: bytes.byteLength,
     byteLength: bytes.byteLength,
+    truncated,
     sourceKind: normalized.sourceKind,
     filename: normalized.filename ?? null,
     declaredMime: normalized.declaredMime ?? null,
@@ -267,6 +278,8 @@ export async function detectInput(input, options = {}) {
     },
     workUnitsUsed: budget.units,
     originalPreserved: true,
+    // Caller should pair with artifact/ledger for byte retrieval; detect result itself is analysis-only
+    originalRetrievableVia: 'artifact-ledger',
   };
 }
 
