@@ -12,6 +12,8 @@ export {
   probeEncodedForms,
   isValidBase64Token,
   isStrongEmbeddedBase64Candidate,
+  isStrongWholeInputBase64,
+  hasCanonicalPadBits,
   scanBase64Tokens,
   charRangeToUtf8Bytes,
 } from './text.js';
