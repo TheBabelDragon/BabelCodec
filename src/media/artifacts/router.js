@@ -75,6 +75,23 @@ export function getDestination(id) {
 }
 
 /**
+ * True when the artifact has a positively detected image representation.
+ * Declared MIME alone is not sufficient.
+ * @param {import('./artifact.js').Artifact} snap
+ */
+function hasPositiveImage(snap) {
+  if (hasImage(snap.representations)) return true;
+  if (
+    hasBytes(snap.representations) &&
+    snap.metadata?.detectedFormat &&
+    snap.metadata.detectedFormat !== 'unknown'
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * List destinations that can accept the current artifact.
  * @param {import('./artifact.js').Artifact} artifact
  * @returns {DestinationCapability[]}
@@ -84,13 +101,7 @@ export function compatibleDestinations(artifact) {
   const available = new Set();
   if (hasBytes(snap.representations)) available.add('bytes');
   if (hasText(snap.representations)) available.add('text');
-  if (hasImage(snap.representations) || (snap.source.mimeType || '').startsWith('image/')) {
-    available.add('image');
-  }
-  // Image studio also accepts bytes that look like images
-  if (hasBytes(snap.representations) && snap.metadata?.detectedFormat && snap.metadata.detectedFormat !== 'unknown') {
-    available.add('image');
-  }
+  if (hasPositiveImage(snap)) available.add('image');
 
   return DESTINATIONS.filter((d) => d.accepts.some((a) => available.has(a)));
 }
@@ -130,7 +141,7 @@ export function routeTo(artifact, destinationId) {
   const available = {
     bytes: hasBytes(snap.representations),
     text: hasText(snap.representations),
-    image: hasImage(snap.representations) || Boolean(snap.metadata?.detectedFormat && snap.metadata.detectedFormat !== 'unknown'),
+    image: hasPositiveImage(snap),
   };
 
   const canAccept = dest.accepts.some((a) => available[a]);

@@ -43,6 +43,11 @@ export function fromText(text, opts = {}) {
 
 /**
  * Build an artifact from raw bytes (file / binary).
+ *
+ * Image representation is set only when format detection succeeds.
+ * Declared MIME is retained as metadata and source.mimeType; it does not
+ * alone qualify the artifact as an image destination.
+ *
  * @param {Uint8Array} bytes
  * @param {{
  *   filename?: string,
@@ -60,16 +65,17 @@ export function fromBytes(bytes, opts = {}) {
   const detected = detectImageFormat(buf);
   const sniffed = sniffMimeType(buf);
   const declared = opts.mimeType || null;
+
+  // Prefer detection, then sniff; declared is recorded but does not override unknown detection for image qualification
   const mimeType =
-    declared && declared !== 'application/octet-stream'
-      ? declared
-      : detected.mimeType !== 'application/octet-stream'
-        ? detected.mimeType
+    detected.mimeType !== 'application/octet-stream'
+      ? detected.mimeType
+      : declared && declared !== 'application/octet-stream'
+        ? declared
         : sniffed;
 
-  const isImage =
-    detected.format !== 'unknown' ||
-    (mimeType && mimeType.startsWith('image/'));
+  // Positive format detection required for image representation
+  const isImage = detected.format !== 'unknown';
 
   return createArtifact({
     source: {
@@ -84,7 +90,7 @@ export function fromBytes(bytes, opts = {}) {
       image: isImage
         ? {
             format: detected.format,
-            mimeType,
+            mimeType: detected.mimeType,
             confidence: detected.confidence,
             width: opts.width,
             height: opts.height,

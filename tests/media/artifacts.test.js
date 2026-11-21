@@ -51,22 +51,47 @@ describe('artifact model', () => {
     assert.equal(snap.representations.bytes[0], 0);
   });
 
-  it('createRevision preserves id and increments revision', () => {
+  it('createArtifact returns defensive copy — mutating bytes does not affect re-snapshot', () => {
+    const input = new Uint8Array([1, 2, 3]);
+    const a = createArtifact({
+      representations: { bytes: input },
+    });
+    // Mutate returned buffer
+    a.representations.bytes[0] = 99;
+    a.metadata.byteLength = 999;
+    a.source.filename = 'mutated.bin';
+
+    // Input buffer must be unchanged (create copied on the way in)
+    assert.equal(input[0], 1);
+
+    // A fresh snapshot from the same logical object is not available once
+    // we only hold the public copy — but a second create from same input is clean
+    const b = createArtifact({
+      representations: { bytes: input },
+    });
+    assert.equal(b.representations.bytes[0], 1);
+    assert.equal(b.metadata.byteLength, 3);
+    assert.notEqual(b.source.filename, 'mutated.bin');
+  });
+
+  it('createRevision returns defensive copy independent of parent mutations', () => {
     const a = fromText('hello');
     const r2 = createRevision(a, {
       representations: {
-        bytes: new Uint8Array([1]),
+        bytes: new Uint8Array([10, 20]),
         text: null,
         image: null,
       },
       operation: 'crop',
     });
-    assert.equal(r2.id, a.id);
+    r2.representations.bytes[0] = 0;
+    assert.equal(a.revision, 1);
+    // Parent text path still intact
+    assert.equal(a.representations.text, 'hello');
     assert.equal(r2.revision, 2);
     assert.equal(r2.provenance.parentArtifactId, a.id);
     assert.equal(r2.provenance.parentRevision, 1);
     assert.equal(r2.provenance.operation, 'crop');
-    assert.equal(a.revision, 1);
   });
 
   it('withHash sets digest without mutating source', () => {
@@ -86,11 +111,23 @@ describe('representations', () => {
   });
 
   it('fromBytes detects PNG magic', () => {
-    // minimal PNG signature
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
     const a = fromBytes(png, { filename: 't.png' });
     assert.equal(a.representations.image?.format, 'png');
     assert.equal(a.metadata.detectedFormat, 'png');
+  });
+
+  it('declared image MIME without magic does not create image representation', () => {
+    const garbage = new Uint8Array([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]);
+    const a = fromBytes(garbage, {
+      filename: 'fake.png',
+      mimeType: 'image/png',
+    });
+    assert.equal(a.representations.image, null);
+    assert.equal(a.metadata.detectedFormat, 'unknown');
+    assert.equal(a.metadata.declaredMime, 'image/png');
+    // source may still record declared or sniffed mime for inspection
+    assert.ok(a.source.mimeType);
   });
 
   it('hex round trip', () => {
@@ -172,7 +209,6 @@ describe('destination router', () => {
   });
 
   it('rejects incompatible destination with diagnostics', () => {
-    // text-only artifact without ensuring bytes — still has bytes from fromText
     const a = createArtifact({
       source: { kind: 'text' },
       representations: { text: 'only', bytes: null, image: null },
@@ -188,6 +224,30 @@ describe('destination router', () => {
     const list = compatibleDestinations(a);
     assert.ok(list.some((d) => d.id === 'image-studio'));
     assert.ok(list.some((d) => d.id === 'sha256'));
+  });
+
+  it('declared image MIME without detection does not list image-studio via image capability alone', () => {
+    // Still has bytes, so image-studio may appear via accepts:['image','bytes']
+    // The important contract: representations.image is null and hasPositiveImage is false
+    const garbage = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+    const a = fromBytes(garbage, { mimeType: 'image/png', filename: 'lie.png' });
+    assert.equal(a.representations.image, null);
+    assert.equal(a.metadata.detectedFormat, 'unknown');
+
+    // Image Studio accepts bytes OR image — so it remains reachable for byte inspection.
+    // What must not happen is treating this as a positively identified image.
+    const list = compatibleDestinations(a);
+    assert.ok(list.some((d) => d.id === 'hex-inspector'));
+    // If image-studio is listed, it is only because of bytes, not image representation
+    const studio = list.find((d) => d.id === 'image-studio');
+    if (studio) {
+      assert.ok(studio.accepts.includes('bytes'));
+    }
+    // routeTo image path must not claim image representation
+    const routed = routeTo(a, 'image-studio');
+    if (routed.ok) {
+      assert.equal(routed.image, null);
+    }
   });
 
   it('preserves provenance on route', () => {

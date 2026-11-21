@@ -7,8 +7,9 @@
  *   id, revision, source, representations, metadata, hashes, provenance
  * }
  *
- * Public consumers receive frozen / defensive copies; internal state
- * is not exposed for mutation.
+ * Public consumers always receive defensive copies. Mutating a returned
+ * artifact (including its byte buffer) must not affect pipeline internals
+ * or subsequent snapshots of the same logical artifact.
  */
 
 import { createProvenance, deriveProvenance } from './provenance.js';
@@ -51,19 +52,11 @@ function generateId() {
  */
 
 /**
- * Create a new artifact. Does not hash by default (call ensureHash).
- *
- * @param {{
- *   id?: string,
- *   source?: Partial<ArtifactSource>,
- *   representations?: object,
- *   metadata?: object,
- *   provenance?: object,
- *   hashes?: { sha256?: string|null },
- * }} [opts]
+ * Internal builder — always paired with a public defensive return.
+ * @param {object} opts
  * @returns {Artifact}
  */
-export function createArtifact(opts = {}) {
+function buildArtifact(opts = {}) {
   const source = {
     kind: opts.source?.kind || 'bytes',
     name: opts.source?.name ?? null,
@@ -74,7 +67,7 @@ export function createArtifact(opts = {}) {
   const artifact = {
     schema: SCHEMA,
     id: opts.id || generateId(),
-    revision: 1,
+    revision: opts.revision != null ? Number(opts.revision) : 1,
     source,
     representations: createRepresentations(opts.representations),
     metadata: createMetadata(opts.metadata),
@@ -84,7 +77,6 @@ export function createArtifact(opts = {}) {
     provenance: createProvenance(opts.provenance || { operation: 'import' }),
   };
 
-  // Stamp byte length if bytes present
   if (hasBytes(artifact.representations) && artifact.metadata.byteLength == null) {
     artifact.metadata.byteLength = artifact.representations.bytes.byteLength;
   }
@@ -109,13 +101,35 @@ export function snapshotArtifact(artifact) {
     representations: freezeRepresentations(artifact.representations),
     metadata: { ...artifact.metadata },
     hashes: { sha256: artifact.hashes?.sha256 ?? null },
-    provenance: { ...artifact.provenance, detail: artifact.provenance?.detail ? { ...artifact.provenance.detail } : undefined },
+    provenance: {
+      ...artifact.provenance,
+      detail: artifact.provenance?.detail ? { ...artifact.provenance.detail } : undefined,
+    },
   };
+}
+
+/**
+ * Create a new artifact. Returns a defensive copy.
+ * Does not hash by default (call analyze / withHash).
+ *
+ * @param {{
+ *   id?: string,
+ *   source?: Partial<ArtifactSource>,
+ *   representations?: object,
+ *   metadata?: object,
+ *   provenance?: object,
+ *   hashes?: { sha256?: string|null },
+ * }} [opts]
+ * @returns {Artifact}
+ */
+export function createArtifact(opts = {}) {
+  return snapshotArtifact(buildArtifact(opts));
 }
 
 /**
  * Create a new revision from an existing artifact.
  * Identity (id) is preserved; revision increments; provenance points to parent.
+ * Returns a defensive copy.
  *
  * @param {Artifact} parent
  * @param {{
@@ -142,8 +156,7 @@ export function createRevision(parent, opts = {}) {
     meta.byteLength = reps.bytes.byteLength;
   }
 
-  return {
-    schema: SCHEMA,
+  const built = buildArtifact({
     id: parent.id,
     revision: nextRevision(parent.revision),
     source: {
@@ -153,7 +166,7 @@ export function createRevision(parent, opts = {}) {
     representations: reps,
     metadata: meta,
     hashes: {
-      sha256: opts.hashes?.sha256 ?? null, // recompute expected by caller
+      sha256: opts.hashes?.sha256 ?? null,
     },
     provenance: deriveProvenance(
       parent.id,
@@ -161,7 +174,9 @@ export function createRevision(parent, opts = {}) {
       opts.operation || 'transform',
       opts.detail,
     ),
-  };
+  });
+
+  return snapshotArtifact(built);
 }
 
 /**
@@ -189,7 +204,6 @@ export function withRepresentations(artifact, representations, metadataPatch) {
   if (hasBytes(snap.representations)) {
     snap.metadata.byteLength = snap.representations.bytes.byteLength;
   }
-  // Hash is invalidated when bytes change
   if (representations.bytes !== undefined) {
     snap.hashes = { sha256: null };
   }
