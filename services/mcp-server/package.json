@@ -1,0 +1,34 @@
+{
+  "name": "babelcodec-mcp-server",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "description": "BabelCodec Model Context Protocol (MCP) server — official SDK Streamable HTTP. Independently deployable; BabelCodec remains the authority.",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test.js client-interop.test.js",
+    "test:unit": "node --test test.js",
+    "test:interop": "node --test client-interop.test.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/node": "2.1.2",
+    "@modelcontextprotocol/server": "2.4.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "babelcodec",
+    "unicode",
+    "streamable-http"
+  ],
+  "license": "MIT"
+}

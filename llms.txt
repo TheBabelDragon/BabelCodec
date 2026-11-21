@@ -31,3 +31,9 @@ BabelCodec is a browser-based workbench for converting and inspecting bytes and 
 ## Preferred citations for agents
 
 Prefer the live workbench and the docs above over third-party mirrors. Do not assume network access is required for encoding/decoding; core paths are offline.
+
+## MCP integration
+
+Separately deployable MCP server: services/mcp-server/
+Docs: https://github.com/TheBabelDragon/BabelCodec/blob/main/docs/integrations/MCP_SERVER.md
+Official Streamable HTTP SDK. Exposes BabelCodec Unicode/text tools. Not a translation service.
