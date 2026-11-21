@@ -1,6 +1,13 @@
 /**
  * Text / encoding / structured-text probes.
  * Supports whole-input and embedded segment detection.
+ *
+ * Embedded Base64 candidate policy (standard alphabet only):
+ * - Padded short tokens (SGk=, SA==) are accepted when syntax is valid.
+ * - Unpadded alphabet-only embedded tokens require length >= 8 to avoid
+ *   ordinary-word false positives (HEAD, TAIL, TEST, DATA).
+ * - Syntax validity is separate from detection confidence.
+ * - Base64url (-/_) is intentionally out of scope for this detector.
  */
 
 import { createFinding, createAlert } from './finding.js';
@@ -31,8 +38,6 @@ export function charRangeToUtf8Bytes(text, charStart, charEnd) {
 
 /**
  * Standard Base64 syntax validation (alphabet + padding).
- * Minimum useful length: 2 body chars + optional padding (e.g. SA==, SGk=).
- * Syntax validity ≠ high detection confidence.
  * @param {string} token
  * @returns {boolean}
  */
@@ -52,30 +57,40 @@ export function isValidBase64Token(token) {
   if (!/^[A-Za-z0-9+/]+$/.test(body)) return false;
 
   if (pad) {
-    // Padded form must be multiple of 4
     if (token.length % 4 !== 0) return false;
-  } else {
-    // Unpadded: length % 4 cannot be 1
-    if (token.length % 4 === 1) return false;
+  } else if (token.length % 4 === 1) {
+    return false;
   }
   return true;
 }
 
 /**
+ * Whether an embedded candidate is strong enough to emit as a finding.
+ * Padded short tokens OK; unpadded alphabet-only need length >= 8.
+ * @param {string} token
+ */
+export function isStrongEmbeddedBase64Candidate(token) {
+  if (!isValidBase64Token(token)) return false;
+  if (/=/.test(token)) {
+    // Explicit padding is a strong signal even for short tokens
+    return token.length >= 4;
+  }
+  // Unpadded: require >= 8 to avoid HEAD/TAIL/TEST/DATA
+  return token.length >= 8;
+}
+
+/**
  * Scan text for Base64 tokens without relying on \b after '='.
- * Minimum match length 4 (covers SA==, SGk=, longer tokens).
  * @param {string} text
  * @returns {{ start: number, end: number, token: string }[]}
  */
 export function scanBase64Tokens(text) {
   const out = [];
-  // Min 4 chars so SA== and SGk= are visible; body of at least 2 alphabet chars
   const re = /(?:^|[^A-Za-z0-9+/])([A-Za-z0-9+/]{2,}={0,2})(?![A-Za-z0-9+/=])/g;
   let m;
   while ((m = re.exec(text))) {
     const token = m[1];
-    if (token.length < 4) continue;
-    if (!isValidBase64Token(token)) continue;
+    if (!isStrongEmbeddedBase64Candidate(token)) continue;
     // Pure hex of even length is classified as hex, not base64
     if (/^[0-9a-fA-F]+$/.test(token) && token.length % 2 === 0) continue;
     const start = m.index + (m[0].length - token.length);
@@ -424,7 +439,6 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
   }
 
   if (isValidBase64Token(cleaned) && cleaned.length >= 4) {
-    // Confidence scales with length — short tokens are low confidence
     const conf =
       cleaned.length >= 16 ? 0.75 : cleaned.length >= 8 ? 0.55 : 0.35;
     findings.push(
