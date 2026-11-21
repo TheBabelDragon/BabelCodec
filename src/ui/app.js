@@ -1,8 +1,10 @@
 /**
  * BabelCodec UI — conversion engine stays independent of DOM.
  * Security: all untrusted strings use textContent / esc(); no unsafe innerHTML.
+ *
+ * v0.14: Converter input uses universal detection + artifact ledger.
  */
-import * as BC from '../api/babelcodec.js?v=0.7.0';
+import * as BC from '../api/babelcodec.js?v=0.14.0';
 import { createInspectorView } from './inspector-view.js?v=0.7.0';
 import { createStructureView } from './structure-view.js?v=0.7.0';
 import { createLogicView } from './logic-view.js?v=0.7.0';
@@ -11,9 +13,22 @@ import { createComputerLab } from './computer-lab.js?v=0.7.0';
 import { createTextLab } from './text-lab.js?v=0.7.0';
 import { createCpuLab } from './cpu-lab.js?v=0.7.0';
 import { createMediaLab } from './media-lab.js?v=0.12.1';
+import {
+  ingestInput,
+  getDefaultLedger,
+  restoreArtifactLedger,
+  createRevision,
+  withHash,
+  analyzeArtifact,
+  fromBytes,
+} from '../media/artifacts/index.js?v=0.14.0';
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 let currentBytes = null;
+/** @type {object|null} */
+let currentArtifact = null;
+/** @type {object|null} */
+let currentDetection = null;
 const $ = (s) => document.querySelector(s);
 const els = {};
 let inspectorView = null;
@@ -73,23 +88,28 @@ function init() {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
 
-  $('#btn-convert').addEventListener('click', runConvert);
+  $('#btn-convert').addEventListener('click', () => {
+    runConvert().catch((e) => setDiagnostics(String(e.message || e), 'err'));
+  });
   $('#btn-swap').addEventListener('click', () => {
     [els.input.value, els.output.value] = [els.output.value, els.input.value];
     [els.fromFormat.value, els.toFormat.value] = [els.toFormat.value, els.fromFormat.value];
-    if ($('#live-convert').checked) runConvert();
+    if ($('#live-convert').checked) runConvert().catch(() => {});
   });
   $('#btn-clear').addEventListener('click', () => {
     els.input.value = '';
     els.output.value = '';
     currentBytes = null;
+    currentArtifact = null;
+    currentDetection = null;
     pushBytesToViews(null);
     setDiagnostics('Cleared.', 'info');
   });
   $('#btn-copy').addEventListener('click', async () => {
     try {
+      // Complete converter output text — not a truncated preview
       await navigator.clipboard.writeText(els.output.value);
-      setDiagnostics('Copied output.', 'ok');
+      setDiagnostics('Copied complete output.', 'ok');
     } catch {
       setDiagnostics('Copy failed.', 'err');
     }
@@ -103,16 +123,16 @@ function init() {
     URL.revokeObjectURL(a.href);
   });
   $('#live-convert').addEventListener('change', () => {
-    if ($('#live-convert').checked) runConvert();
+    if ($('#live-convert').checked) runConvert().catch(() => {});
   });
   els.input.addEventListener('input', () => {
-    if ($('#live-convert').checked) runConvert();
+    if ($('#live-convert').checked) runConvert().catch(() => {});
   });
   els.fromFormat.addEventListener('change', () => {
-    if ($('#live-convert').checked) runConvert();
+    if ($('#live-convert').checked) runConvert().catch(() => {});
   });
   els.toFormat.addEventListener('change', () => {
-    if ($('#live-convert').checked) runConvert();
+    if ($('#live-convert').checked) runConvert().catch(() => {});
   });
   $('#btn-load').addEventListener('click', () => $('#file-input').click());
   $('#file-input').addEventListener('change', async (e) => {
@@ -122,14 +142,20 @@ function init() {
       setDiagnostics(`File exceeds ${MAX_FILE_BYTES} bytes`, 'err');
       return;
     }
-    const buf = new Uint8Array(await f.arrayBuffer());
-    currentBytes = buf;
-    pushBytesToViews(buf);
-    els.input.value = BC.encodeHex(buf);
-    els.fromFormat.value = 'hex';
-    els.fileMeta.textContent = `${f.name} · ${buf.length} bytes`;
-    runConvert();
-    setDiagnostics(`Loaded ${f.name}`, 'ok');
+    try {
+      const result = await ingestInput(f, { filename: f.name, mimeType: f.type });
+      currentArtifact = result.artifact;
+      currentDetection = result.detection;
+      currentBytes = result.artifact.representations.bytes;
+      pushBytesToViews(currentBytes);
+      els.input.value = BC.encodeHex(currentBytes);
+      els.fromFormat.value = 'hex';
+      els.fileMeta.textContent = `${f.name} · ${currentBytes.length} bytes`;
+      await runConvert();
+      setDiagnostics(formatDetectionSummary(result.detection, result.analysis), 'ok');
+    } catch (err) {
+      setDiagnostics(String(err.message || err), 'err');
+    }
     e.target.value = '';
   });
 
@@ -220,10 +246,19 @@ function init() {
     headerActions.insertBefore(transferBtn, headerActions.firstChild);
   }
 
-  setDiagnostics('Ready. Enter input or load a file.', 'info');
+  // Restore durable ledger history (browser)
+  restoreArtifactLedger()
+    .then((r) => {
+      if (r.available && r.restored > 0) {
+        setDiagnostics(`Ledger restored (${r.restored} records). Ready.`, 'info');
+      } else {
+        setDiagnostics('Ready. Enter input or load a file.', 'info');
+      }
+    })
+    .catch(() => setDiagnostics('Ready. Enter input or load a file.', 'info'));
+
   switchTab('converter');
 
-  // Suite handoff from Image Studio Playground (exact bytes + tab)
   window.addEventListener('babelcodec:suite-bytes', (ev) => {
     const bytes = ev.detail?.bytes;
     if (!bytes) return;
@@ -234,6 +269,18 @@ function init() {
     const tab = ev.detail?.tab;
     if (tab) switchTab(tab);
   });
+}
+
+function formatDetectionSummary(detection, analysis) {
+  if (!detection) return 'Ingested.';
+  const tops = (detection.findings || [])
+    .filter((f) => f.type !== 'unclassified')
+    .slice(0, 4)
+    .map((f) => `${f.subtype || f.type}@${f.offset}`)
+    .join(', ');
+  const hash = analysis?.sha256 ? analysis.sha256.slice(0, 12) + '…' : 'no-hash';
+  const alerts = (detection.alerts || []).length;
+  return `Detected: ${tops || 'unclassified'} · sha256 ${hash}${alerts ? ` · ${alerts} alert(s)` : ''}`;
 }
 
 function switchTab(name) {
@@ -275,11 +322,7 @@ function getTextEncoding() {
   return els.textEncoding.value === 'ascii' ? 'ascii' : 'utf8';
 }
 
-function parseRawBytesInput(text) {
-  return BC.decodeHex(text);
-}
-
-function runConvert() {
+async function runConvert() {
   try {
     const from = els.fromFormat.value;
     const to = els.toFormat.value;
@@ -308,6 +351,21 @@ function runConvert() {
     }
     currentBytes = bytes;
     pushBytesToViews(bytes);
+
+    // Pipeline: detect + ledger for text/bytes entry when no file artifact yet
+    if (!currentArtifact || from === 'text') {
+      try {
+        const inputForDetect = from === 'text' ? els.input.value : bytes;
+        const result = await ingestInput(inputForDetect, {
+          detectOptions: { decodeNested: true },
+        });
+        currentArtifact = result.artifact;
+        currentDetection = result.detection;
+      } catch {
+        /* detection is best-effort; conversion continues */
+      }
+    }
+
     let out;
     if (to === 'text') {
       out = enc === 'ascii' ? BC.decodeAscii(bytes) : BC.decodeUtf8(bytes);
@@ -331,7 +389,34 @@ function runConvert() {
       out = BC.encodeHex(bytes);
     }
     els.output.value = out;
-    setDiagnostics(`Converted ${from} → ${to} (${bytes.length} bytes)`, 'ok');
+
+    // Commit conversion output revision when we have an artifact parent
+    if (currentArtifact) {
+      try {
+        const outBytes = BC.encodeUtf8(out);
+        let rev = createRevision(currentArtifact, {
+          representations: { bytes: outBytes, text: out, image: null },
+          operation: 'convert',
+          detail: { from, to },
+        });
+        const analysis = analyzeArtifact(rev, { computeHash: true });
+        if (analysis.sha256) rev = withHash(rev, analysis.sha256);
+        await getDefaultLedger().commit(rev, {
+          operationName: 'convert',
+          operationParams: { from, to },
+          sourceRepresentation: from,
+          destinationRepresentation: to,
+        });
+        currentArtifact = rev;
+      } catch {
+        /* ledger commit is non-fatal */
+      }
+    }
+
+    const det = currentDetection
+      ? ` · ${formatDetectionSummary(currentDetection, null)}`
+      : '';
+    setDiagnostics(`Converted ${from} → ${to} (${bytes.length} bytes)${det}`, 'ok');
   } catch (e) {
     setDiagnostics(String(e.message || e), 'err');
   }
