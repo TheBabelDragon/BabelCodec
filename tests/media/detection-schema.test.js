@@ -19,17 +19,27 @@ let validate;
 let getErrors;
 
 before(async () => {
-  let Ajv;
+  let Ajv2020;
   try {
-    const mod = await import('ajv');
-    Ajv = mod.default || mod.Ajv;
-  } catch {
+    const mod = await import('ajv/dist/2020.js');
+    Ajv2020 = mod.default || mod.Ajv2020;
+  } catch (err) {
     throw new Error(
-      'ajv is required for detection schema tests (devDependency). Run npm install.',
+      `ajv Draft 2020-12 is required for detection schema tests (devDependency). Run npm install. Import error: ${err}`,
     );
   }
-  const ajv = new Ajv({ allErrors: true, strict: false });
-  validate = ajv.compile(schema);
+  if (typeof Ajv2020 !== 'function') {
+    throw new Error('ajv/dist/2020.js did not export a constructor');
+  }
+  const ajv = new Ajv2020({
+    allErrors: true,
+    strict: false,
+  });
+  try {
+    validate = ajv.compile(schema);
+  } catch (err) {
+    throw new Error(`Failed to compile detection-result.v1 schema: ${err}`);
+  }
   getErrors = () => validate.errors || [];
 });
 
@@ -71,12 +81,12 @@ describe('detection-result.v1 schema (Ajv Draft 2020-12)', () => {
     assertValid(r, 'nested-png');
 
     const b64 = r.findings.find((f) => f.subtype === 'base64' && f.source_token === token);
-    assert.ok(b64);
+    assert.ok(b64, 'Base64 finding with exact source token');
     assert.equal(typeof b64.char_start, 'number');
     assert.equal(typeof b64.char_end, 'number');
 
     const nested = r.findings.find((f) => f.parent_finding_id === b64.finding_id);
-    assert.ok(nested);
+    assert.ok(nested, 'nested finding with parent_finding_id');
     assert.ok(nested.evidence.includes('decoded-coordinate-space'));
     assert.ok(
       (nested.relationships || []).some(
@@ -112,6 +122,7 @@ describe('schema rejects malformed results', () => {
   it('missing required fields / bad types', async () => {
     const base = await detectInput('ok');
     assertValid(base, 'base');
+    assert.ok(base.findings.length >= 1, 'fixture must include at least one finding');
 
     const missingSchema = clone(base);
     delete missingSchema.schema;
@@ -122,22 +133,19 @@ describe('schema rejects malformed results', () => {
     assertInvalid(negLen, 'negative byteLength');
 
     const badConf = clone(base);
-    if (badConf.findings[0]) {
-      badConf.findings[0].confidence = 2;
-      assertInvalid(badConf, 'confidence > 1');
-    }
+    assert.ok(badConf.findings[0]);
+    badConf.findings[0].confidence = 2;
+    assertInvalid(badConf, 'confidence > 1');
 
     const badComplete = clone(base);
-    if (badComplete.findings[0]) {
-      badComplete.findings[0].completeness = 'nope';
-      assertInvalid(badComplete, 'bad completeness');
-    }
+    assert.ok(badComplete.findings[0]);
+    badComplete.findings[0].completeness = 'nope';
+    assertInvalid(badComplete, 'bad completeness');
 
     const badRel = clone(base);
-    if (badRel.findings[0]) {
-      badRel.findings[0].relationships = [{ kind: 'decoded-from' }];
-      assertInvalid(badRel, 'relationship missing target');
-    }
+    assert.ok(badRel.findings[0]);
+    badRel.findings[0].relationships = [{ kind: 'decoded-from' }];
+    assertInvalid(badRel, 'relationship missing target');
 
     const badAlert = clone(base);
     badAlert.alerts = [{ level: 'fatal', code: 'X', message: 'no' }];
@@ -148,9 +156,8 @@ describe('schema rejects malformed results', () => {
     assertInvalid(badAlertCode, 'non-string alert code');
 
     const negChar = clone(base);
-    if (negChar.findings[0]) {
-      negChar.findings[0].char_start = -3;
-      assertInvalid(negChar, 'negative char_start');
-    }
+    assert.ok(negChar.findings[0]);
+    negChar.findings[0].char_start = -3;
+    assertInvalid(negChar, 'negative char_start');
   });
 });
