@@ -7,7 +7,10 @@ import { encodeHex } from '../../core/hex.js';
 import { encodeBase64 } from '../../core/base64.js';
 import { decodeUtf8 } from '../../core/utf8.js';
 import { copyBytes } from './representations.js';
-import { snapshotArtifact, createRevision } from './artifact.js';
+import { snapshotArtifact } from './artifact.js';
+import { deriveProvenance } from './provenance.js';
+import { createRepresentations } from './representations.js';
+import { mergeMetadata } from './metadata.js';
 
 let recordSeq = 0;
 function nextRecordId() {
@@ -34,6 +37,30 @@ export function createArtifactLedger(opts = {}) {
     return `${artifactId}@${revision}`;
   }
 
+  /** Highest known revision for an artifact (ledger records + in-memory artifacts). */
+  function highestRevision(artifactId) {
+    let max = 0;
+    for (const r of records.values()) {
+      if (r.artifactId === artifactId && r.revision > max) max = r.revision;
+    }
+    for (const k of artifacts.keys()) {
+      if (k.startsWith(`${artifactId}@`)) {
+        const rev = Number(k.slice(artifactId.length + 1));
+        if (rev > max) max = rev;
+      }
+    }
+    return max;
+  }
+
+  function revisionExists(artifactId, revision) {
+    if (payloads.has(keyOf(artifactId, revision))) return true;
+    if (artifacts.has(keyOf(artifactId, revision))) return true;
+    for (const r of records.values()) {
+      if (r.artifactId === artifactId && r.revision === revision) return true;
+    }
+    return false;
+  }
+
   function listRecords(artifactId) {
     const all = [...records.values()];
     const filtered = artifactId ? all.filter((r) => r.artifactId === artifactId) : all;
@@ -54,9 +81,6 @@ export function createArtifactLedger(opts = {}) {
     return b ? copyBytes(b) : null;
   }
 
-  /**
-   * Load cold persisted payload into memory if available.
-   */
   async function ensureBytes(artifactId, revision) {
     const existing = getBytes(artifactId, revision);
     if (existing) return existing;
@@ -80,14 +104,11 @@ export function createArtifactLedger(opts = {}) {
             : copyBytes(new Uint8Array(row.bytes));
         if (buf) {
           payloads.set(keyOf(artifactId, revision), buf);
-          const rec = getRecord(artifactId, revision);
-          if (rec) {
-            for (const [id, r] of records.entries()) {
-              if (r.artifactId === artifactId && r.revision === revision) {
-                r.exportAvailable = true;
-                r.storageStatus = 'persisted';
-                records.set(id, r);
-              }
+          for (const [id, r] of records.entries()) {
+            if (r.artifactId === artifactId && r.revision === revision) {
+              r.exportAvailable = true;
+              r.storageStatus = 'persisted';
+              records.set(id, r);
             }
           }
           return copyBytes(buf);
@@ -105,6 +126,17 @@ export function createArtifactLedger(opts = {}) {
   async function commit(artifact, info = {}) {
     const snap = snapshotArtifact(artifact);
     const k = keyOf(snap.id, snap.revision);
+
+    // Uniqueness: refuse to overwrite an existing revision slot
+    if (revisionExists(snap.id, snap.revision) && !info.allowOverwrite) {
+      // If this exact revision was already committed with same content, treat as idempotent return
+      const existing = getRecord(snap.id, snap.revision);
+      if (existing) {
+        return { ...existing, duplicate: true };
+      }
+      throw new Error(`Revision collision: ${snap.id}@${snap.revision} already exists`);
+    }
+
     const bytes = snap.representations.bytes ? copyBytes(snap.representations.bytes) : null;
 
     let digest = snap.hashes?.sha256 ?? null;
@@ -303,9 +335,6 @@ export function createArtifactLedger(opts = {}) {
     return { ok: digest === rec.sha256, expected: rec.sha256, actual: digest, record: rec };
   }
 
-  /**
-   * Snapshot historical revision (does not create new revision).
-   */
   function restore(artifactId, revision) {
     const snap = getArtifactSnapshot(artifactId, revision);
     const bytes = getBytes(artifactId, revision);
@@ -331,7 +360,8 @@ export function createArtifactLedger(opts = {}) {
   }
 
   /**
-   * Restore historical revision as a **new working revision** (preserves history).
+   * Restore historical revision as a new working revision.
+   * Allocates highestExistingRevision + 1 (never parent.revision + 1 alone).
    */
   async function restoreWorking(artifactId, revision) {
     let bytes = getBytes(artifactId, revision);
@@ -339,26 +369,34 @@ export function createArtifactLedger(opts = {}) {
     if (!bytes) return { ok: false, reason: 'missing_bytes' };
 
     const parentSnap = getArtifactSnapshot(artifactId, revision);
-    const base = parentSnap || {
+    const hi = highestRevision(artifactId);
+    const newRev = hi + 1;
+
+    if (revisionExists(artifactId, newRev)) {
+      return { ok: false, reason: 'revision_collision', attempted: newRev };
+    }
+
+    const working = {
       schema: 'babelcodec.artifact.v1',
       id: artifactId,
-      revision,
-      source: { kind: 'bytes', name: null, mimeType: null, filename: null },
-      representations: { bytes, text: null, image: null },
-      metadata: { byteLength: bytes.byteLength },
-      hashes: { sha256: null },
-      provenance: { parentArtifactId: null, parentRevision: null, operation: 'import' },
-    };
-
-    const working = createRevision(base, {
-      representations: {
-        bytes: copyBytes(bytes),
-        text: base.representations?.text ?? null,
-        image: base.representations?.image ?? null,
+      revision: newRev,
+      source: {
+        ...(parentSnap?.source || { kind: 'bytes', name: null, mimeType: null, filename: null }),
+        kind: 'transformed',
       },
-      operation: 'restore',
-      detail: { restoredFromRevision: revision },
-    });
+      representations: createRepresentations({
+        bytes: copyBytes(bytes),
+        text: parentSnap?.representations?.text ?? null,
+        image: parentSnap?.representations?.image ?? null,
+      }),
+      metadata: mergeMetadata(parentSnap?.metadata || { byteLength: bytes.byteLength }, {
+        byteLength: bytes.byteLength,
+      }),
+      hashes: { sha256: null },
+      provenance: deriveProvenance(artifactId, revision, 'restore', {
+        restoredFromRevision: revision,
+      }),
+    };
 
     let digest;
     try {
@@ -475,11 +513,6 @@ export function createArtifactLedger(opts = {}) {
     };
   }
 
-  /**
-   * Clear memory and optionally delete IndexedDB rows.
-   * @param {string} [artifactId]
-   * @param {{ persist?: boolean }} [opts] persist:true deletes IDB entries
-   */
   async function clear(artifactId, opts = {}) {
     const persist = opts.persist !== false;
     const toDelete = [];
@@ -533,6 +566,7 @@ export function createArtifactLedger(opts = {}) {
     copyOutput,
     clear,
     storageSummary,
+    highestRevision,
   };
 }
 

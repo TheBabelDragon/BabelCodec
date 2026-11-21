@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { detectInput } from '../../src/media/detection/index.js';
 import { encodeBase64 } from '../../src/core/base64.js';
+import { isValidBase64Token, scanBase64Tokens } from '../../src/media/detection/text.js';
 
 describe('exact-span nested Base64', () => {
   it('decodes only the embedded token, not surrounding text', async () => {
@@ -16,6 +17,21 @@ describe('exact-span nested Base64', () => {
     const nested = r.findings.find((f) => f.subtype === 'png' && f.parent_finding_id);
     assert.ok(nested, 'nested PNG from exact token');
     assert.ok(nested.evidence.includes('decoded-coordinate-space'));
+  });
+
+  it('handles padding = and ==', () => {
+    // "Hi" -> SGk=
+    assert.equal(isValidBase64Token('SGk='), true);
+    // "H" -> SA==
+    assert.equal(isValidBase64Token('SA=='), true);
+    const hits = scanBase64Tokens('prefix SGk= middle SA== end');
+    assert.ok(hits.some((h) => h.token === 'SGk='));
+    assert.ok(hits.some((h) => h.token === 'SA=='));
+  });
+
+  it('rejects invalid padding', () => {
+    assert.equal(isValidBase64Token('SGk==='), false);
+    assert.equal(isValidBase64Token('SG=k'), false);
   });
 
   it('reports originalByteLength when truncated', async () => {
