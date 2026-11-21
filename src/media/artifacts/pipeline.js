@@ -2,9 +2,10 @@
  * High-level pipeline: input → detect → artifact → hash → ledger.
  */
 
-import { detectInput } from '../detection/index.js';
+import { detectInput, normalizeInput } from '../detection/index.js';
 import { fromBytes, fromText } from './representations-service.js';
-import { analyzeArtifact, withHash } from './index.js';
+import { analyzeArtifact } from './analyze.js';
+import { withHash } from './artifact.js';
 import { getDefaultLedger } from './ledger.js';
 import { copyBytes } from './representations.js';
 
@@ -26,12 +27,10 @@ export async function ingestInput(input, opts = {}) {
     ...(opts.detectOptions || {}),
   });
 
-  // Prefer original bytes from normalization inside detect — re-normalize for artifact
   let artifact;
   if (typeof input === 'string') {
     artifact = fromText(input, { filename: opts.filename });
   } else {
-    const { normalizeInput } = await import('../detection/detect.js');
     const norm = await normalizeInput(input);
     artifact = fromBytes(norm.bytes, {
       filename: opts.filename || norm.filename,
@@ -44,7 +43,6 @@ export async function ingestInput(input, opts = {}) {
     artifact = withHash(artifact, analysis.sha256);
   }
 
-  // Attach detection to metadata (copy)
   artifact = {
     ...artifact,
     metadata: {
