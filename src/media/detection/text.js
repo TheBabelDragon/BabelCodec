@@ -1,8 +1,40 @@
 /**
  * Text / encoding / structured-text probes.
+ * Supports whole-input and embedded segment detection.
  */
 
 import { createFinding, createAlert } from './finding.js';
+
+/**
+ * Map a UTF-16 code-unit index range to approximate UTF-8 byte offsets
+ * for BMP-heavy text (sufficient for JSON/hex/base64 ASCII spans).
+ * @param {string} text
+ * @param {number} charStart
+ * @param {number} charEnd
+ */
+export function charRangeToUtf8Bytes(text, charStart, charEnd) {
+  let byteStart = 0;
+  for (let i = 0; i < charStart && i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c <= 0x7f) byteStart += 1;
+    else if (c <= 0x7ff) byteStart += 2;
+    else if (c >= 0xd800 && c <= 0xdbff) {
+      byteStart += 4;
+      i += 1;
+    } else byteStart += 3;
+  }
+  let byteEnd = byteStart;
+  for (let i = charStart; i < charEnd && i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c <= 0x7f) byteEnd += 1;
+    else if (c <= 0x7ff) byteEnd += 2;
+    else if (c >= 0xd800 && c <= 0xdbff) {
+      byteEnd += 4;
+      i += 1;
+    } else byteEnd += 3;
+  }
+  return { offset: byteStart, length: Math.max(0, byteEnd - byteStart) };
+}
 
 /**
  * @param {Uint8Array} bytes
@@ -25,7 +57,6 @@ export function probeTextAndEncoding(bytes) {
     return findings;
   }
 
-  // UTF-16 BOM
   if (bytes.length >= 2) {
     if (bytes[0] === 0xff && bytes[1] === 0xfe) {
       findings.push(
@@ -59,7 +90,6 @@ export function probeTextAndEncoding(bytes) {
     }
   }
 
-  // UTF-8 BOM
   if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
     findings.push(
       createFinding({
@@ -123,17 +153,61 @@ export function probeTextAndEncoding(bytes) {
 }
 
 /**
- * Structured text probes on decoded UTF-8 string (when available).
+ * Try to extract a balanced JSON value starting at index i.
+ * @param {string} text
+ * @param {number} i
+ * @returns {{ end: number, value: string }|null}
+ */
+function extractJsonAt(text, i) {
+  const open = text[i];
+  if (open !== '{' && open !== '[') return null;
+  const close = open === '{' ? '}' : ']';
+  let depth = 0;
+  let inStr = false;
+  let escape = false;
+  for (let j = i; j < text.length; j++) {
+    const c = text[j];
+    if (inStr) {
+      if (escape) escape = false;
+      else if (c === '\\') escape = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') {
+      inStr = true;
+      continue;
+    }
+    if (c === open) depth += 1;
+    else if (c === close) {
+      depth -= 1;
+      if (depth === 0) {
+        const value = text.slice(i, j + 1);
+        try {
+          JSON.parse(value);
+          return { end: j + 1, value };
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Structured text probes — whole input and embedded JSON segments.
  * @param {string} text
  * @param {number} [byteLength]
+ * @param {{ maxFindings?: number }} [opts]
  */
-export function probeStructuredText(text, byteLength) {
+export function probeStructuredText(text, byteLength, opts = {}) {
   const findings = [];
   if (text == null || text.length === 0) return findings;
+  const max = opts.maxFindings ?? 16;
   const trimmed = text.trim();
   const len = byteLength != null ? byteLength : text.length;
 
-  // JSON
+  // Whole-input JSON
   if (
     (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
     (trimmed.startsWith('[') && trimmed.endsWith(']'))
@@ -145,7 +219,7 @@ export function probeStructuredText(text, byteLength) {
           type: 'structured',
           subtype: 'json',
           confidence: 0.92,
-          evidence: ['json-parse-ok'],
+          evidence: ['json-parse-ok', 'whole-input'],
           offset: 0,
           length: len,
           completeness: 'complete',
@@ -166,6 +240,31 @@ export function probeStructuredText(text, byteLength) {
           alerts: [createAlert('warning', 'MALFORMED_JSON', 'JSON-like structure failed to parse')],
         }),
       );
+    }
+  }
+
+  // Embedded JSON scan
+  if (!findings.some((f) => f.subtype === 'json' && f.completeness === 'complete')) {
+    for (let i = 0; i < text.length && findings.length < max; i++) {
+      if (text[i] !== '{' && text[i] !== '[') continue;
+      const extracted = extractJsonAt(text, i);
+      if (!extracted) continue;
+      // Skip if this is essentially the whole trimmed input already reported
+      if (extracted.value === trimmed) continue;
+      const range = charRangeToUtf8Bytes(text, i, extracted.end);
+      findings.push(
+        createFinding({
+          type: 'structured',
+          subtype: 'json',
+          confidence: 0.88,
+          evidence: ['json-parse-ok', 'embedded', `char:${i}-${extracted.end}`],
+          offset: range.offset,
+          length: range.length,
+          completeness: 'complete',
+          decoder_available: true,
+        }),
+      );
+      i = extracted.end - 1;
     }
   }
 
@@ -201,7 +300,7 @@ export function probeStructuredText(text, byteLength) {
     }
   }
 
-  // CSV / TSV heuristic
+  // CSV / TSV
   const lines = trimmed.split(/\r?\n/).filter((l) => l.length > 0).slice(0, 20);
   if (lines.length >= 2) {
     const commas = lines.map((l) => (l.match(/,/g) || []).length);
@@ -237,7 +336,6 @@ export function probeStructuredText(text, byteLength) {
     }
   }
 
-  // YAML heuristic (very light)
   if (/^---\s*$/m.test(trimmed) || /^[\w-]+:\s/m.test(trimmed)) {
     if (!findings.some((f) => f.subtype === 'json')) {
       findings.push(
@@ -260,24 +358,26 @@ export function probeStructuredText(text, byteLength) {
 }
 
 /**
- * Encoded-form probes on text.
+ * Encoded-form probes — whole input and embedded tokens.
  * @param {string} text
  * @param {number} [byteLength]
+ * @param {{ maxFindings?: number }} [opts]
  */
-export function probeEncodedForms(text, byteLength) {
+export function probeEncodedForms(text, byteLength, opts = {}) {
   const findings = [];
   if (!text || text.length < 4) return findings;
+  const max = opts.maxFindings ?? 16;
   const cleaned = text.replace(/\s+/g, '');
   const len = byteLength != null ? byteLength : text.length;
 
-  // Hex
+  // Whole-input hex
   if (/^[0-9a-fA-F]+$/.test(cleaned) && cleaned.length % 2 === 0 && cleaned.length >= 8) {
     findings.push(
       createFinding({
         type: 'encoded',
         subtype: 'hex',
         confidence: cleaned.length >= 32 ? 0.85 : 0.6,
-        evidence: ['hex-charset', `len:${cleaned.length}`],
+        evidence: ['hex-charset', 'whole-input', `len:${cleaned.length}`],
         offset: 0,
         length: len,
         completeness: 'complete',
@@ -286,14 +386,14 @@ export function probeEncodedForms(text, byteLength) {
     );
   }
 
-  // Base64
+  // Whole-input Base64
   if (/^[A-Za-z0-9+/]+=*$/.test(cleaned) && cleaned.length >= 8 && cleaned.length % 4 === 0) {
     findings.push(
       createFinding({
         type: 'encoded',
         subtype: 'base64',
         confidence: cleaned.length >= 16 ? 0.75 : 0.5,
-        evidence: ['base64-charset', `len:${cleaned.length}`],
+        evidence: ['base64-charset', 'whole-input', `len:${cleaned.length}`],
         offset: 0,
         length: len,
         completeness: 'complete',
@@ -304,6 +404,52 @@ export function probeEncodedForms(text, byteLength) {
             'BASE64_CANDIDATE',
             'Base64-like content; not confirmed until decode validates',
           ),
+        ],
+      }),
+    );
+  }
+
+  // Embedded hex tokens (length >= 16 hex chars)
+  const hexRe = /\b[0-9a-fA-F]{16,}\b/g;
+  let m;
+  while ((m = hexRe.exec(text)) && findings.length < max) {
+    if (m[0].length % 2 !== 0) continue;
+    if (findings.some((f) => f.subtype === 'hex' && f.evidence.includes('whole-input'))) break;
+    const range = charRangeToUtf8Bytes(text, m.index, m.index + m[0].length);
+    findings.push(
+      createFinding({
+        type: 'encoded',
+        subtype: 'hex',
+        confidence: 0.55,
+        evidence: ['hex-token', `len:${m[0].length}`],
+        offset: range.offset,
+        length: range.length,
+        completeness: 'complete',
+        decoder_available: true,
+      }),
+    );
+  }
+
+  // Embedded Base64 tokens (length >= 16, multiple of 4)
+  const b64Re = /\b[A-Za-z0-9+/]{16,}={0,2}\b/g;
+  while ((m = b64Re.exec(text)) && findings.length < max) {
+    if (m[0].length % 4 !== 0) continue;
+    if (findings.some((f) => f.subtype === 'base64' && f.evidence.includes('whole-input'))) break;
+    // Skip pure hex tokens already classified
+    if (/^[0-9a-fA-F]+$/.test(m[0])) continue;
+    const range = charRangeToUtf8Bytes(text, m.index, m.index + m[0].length);
+    findings.push(
+      createFinding({
+        type: 'encoded',
+        subtype: 'base64',
+        confidence: 0.55,
+        evidence: ['base64-token', `len:${m[0].length}`],
+        offset: range.offset,
+        length: range.length,
+        completeness: 'complete',
+        decoder_available: true,
+        alerts: [
+          createAlert('info', 'BASE64_CANDIDATE', 'Embedded Base64-like token; not confirmed until decode'),
         ],
       }),
     );
