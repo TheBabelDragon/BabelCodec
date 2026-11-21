@@ -49,11 +49,6 @@ export async function normalizeInput(input, opts = {}) {
   throw new Error('Unsupported input type for detection');
 }
 
-/**
- * Extract exact Base64/hex token for a finding.
- * @param {object} finding
- * @param {string} text
- */
 function extractToken(finding, text) {
   if (finding.source_token) return String(finding.source_token).replace(/\s+/g, '');
   if (
@@ -67,6 +62,12 @@ function extractToken(finding, text) {
     return text.replace(/\s+/g, '');
   }
   return null;
+}
+
+function candidateScore(f) {
+  const len = f.source_token ? String(f.source_token).length : f.length || 0;
+  const hasSpan = f.source_token || (f.char_start != null && f.char_end != null) ? 1 : 0;
+  return len * 10 + (f.confidence || 0) * 5 + hasSpan;
 }
 
 export async function detectInput(input, options = {}) {
@@ -134,9 +135,12 @@ export async function detectInput(input, options = {}) {
 
     const depthLeft = options.maxDepth ?? limits.maxScanDepth;
     if (options.decodeNested !== false && depthLeft > 0 && budget.units < budget.max) {
-      const b64Candidates = findings.filter(
-        (f) => f.subtype === 'base64' && f.confidence >= 0.5,
-      );
+      // Prefer longer / higher-confidence / span-backed candidates first
+      const b64Candidates = findings
+        .filter((f) => f.subtype === 'base64' && (f.confidence >= 0.4 || (f.source_token && f.source_token.length >= 12)))
+        .slice()
+        .sort((a, b) => candidateScore(b) - candidateScore(a));
+
       for (const b64Finding of b64Candidates.slice(0, 3)) {
         if (budget.units >= budget.max) break;
         const token = extractToken(b64Finding, text);
@@ -153,7 +157,6 @@ export async function detectInput(input, options = {}) {
           budget.units += 15;
           if (decoded.byteLength <= 0 || decoded.byteLength > limits.maxNestedDecodeBytes) continue;
 
-          // Recursive depth: allow further nesting with decremented depth
           const nested = await detectInput(decoded, {
             typeHint: options.typeHint,
             maxDepth: depthLeft - 1,
@@ -278,7 +281,6 @@ export async function detectInput(input, options = {}) {
     },
     workUnitsUsed: budget.units,
     originalPreserved: true,
-    // Caller should pair with artifact/ledger for byte retrieval; detect result itself is analysis-only
     originalRetrievableVia: 'artifact-ledger',
   };
 }
