@@ -1,25 +1,25 @@
 # BabelCodec MCP Server Integration
 
-**Status:** v0.1  
+**Status:** v0.1.1  
 **Service path:** `services/mcp-server/`  
-**Transport:** HTTP JSON-RPC (MCP tools/list, tools/call, initialize) — Streamable HTTP compatible JSON response mode  
+**Transport:** Official MCP SDK Streamable HTTP (`createMcpHandler` + `toNodeHandler`)  
 **Authority:** BabelCodec Rust Unicode Core + existing public JS APIs
 
 ## Architecture
 
-The MCP server is an **adapter**. It does not reimplement Unicode algorithms, normalization, or script detection. It calls:
+The MCP server is an **adapter**. It does not reimplement Unicode algorithms. It calls:
 
 - `toCanonical()` / `applyNormalization()` / `detectScripts()` from `babelcodec/text`
 - `hebrewAdapter` from `babelcodec/scripts`
 - codec registry from `babelcodec` / `babelcodec/core`
 
-When WASM initialization fails, tools return `WASM_INITIALIZATION_FAILED` or `ENGINE_NOT_READY`. There is no silent JavaScript fallback.
+When WASM initialization fails, tools return `WASM_INITIALIZATION_FAILED` or `ENGINE_NOT_READY`. There is no silent JavaScript fallback. Codec registry failures are explicit errors (no fabricated lists).
 
-## Available tools
+## Tools
 
-See [services/mcp-server/README.md](../../services/mcp-server/README.md) for the full table and input/output contracts.
+See [services/mcp-server/README.md](../../services/mcp-server/README.md).
 
-Response envelope (success):
+Success envelope:
 
 ```json
 {
@@ -28,27 +28,27 @@ Response envelope (success):
   "tool": "babelcodec_inspect_text",
   "engine": "rust-wasm",
   "engine_version": "…",
-  "result": { },
+  "result": {},
   "diagnostics": []
 }
 ```
 
 ## Security
 
-- Optional Bearer auth in development; mandatory configurable auth in production.
-- Request-size and input-length limits.
-- Per-client rate limiting.
-- Explicit CORS origin allowlist (empty by default).
-- No arbitrary URL fetch, no dynamic code execution, no request-body logging by default.
-- Error bodies never include stack traces or environment values.
+- Bearer auth (`MCP_TOKEN`, `REQUIRE_AUTH`)
+- `X-Forwarded-For` honored only for peers in `TRUSTED_PROXIES`
+- Body/text limits and per-client rate limiting
+- Explicit CORS origin allowlist (empty default)
+- No request-body logging of secrets; no stack traces in client errors
 
 ## Deployment
 
-Independent of GitHub Pages. Example:
+Independent of GitHub Pages:
 
 ```bash
 npm run build:wasm
 cd services/mcp-server
+npm ci
 export NODE_ENV=production
 export MCP_TOKEN=<strong-secret>
 export MCP_HOST=0.0.0.0
@@ -56,21 +56,21 @@ export MCP_PORT=8790
 node server.js
 ```
 
-Health: `GET /health`  
-MCP: `POST /mcp`
+- Health: `GET /health`
+- MCP: Streamable HTTP on `/mcp` via the official SDK handler
 
 ## Grok connection
 
-Configure a **custom MCP connector** with the server URL and Bearer token. This is distinct from any built-in X Grok surface. Native product integration is out of scope until verified.
+Configure a **custom MCP connector** with the server URL and Bearer token. Distinct from any built-in X Grok surface.
 
-## Known limitations
+## Verification
 
-- WASM assets (`pkg/`) must be built and loadable by the Node process.
-- Script detection is Unicode Script property, not language identification.
-- Non-Hebrew script adapters are detection stubs.
-- No natural-language translation is offered or claimed.
-- Official MCP TypeScript SDK packages are optional; a minimal JSON-RPC path is implemented so the service runs without them.
+```bash
+cd services/mcp-server && npm test
+```
 
-## Future extension points
+Includes official `@modelcontextprotocol/client` interop (initialize, list tools, call tools, structured content, invalid args).
 
-Tool registry is data-driven (`TOOL_REGISTRY` in `tools.js`). Future capabilities register as new tools with explicit capability flags. External LLMs must not substitute for BabelCodec’s engine.
+## Future extension
+
+Register new tools in `createBabelMcpServer()` (`server.js`) backed by handlers in `TOOL_HANDLERS` (`tools.js`). External LLMs must not substitute for BabelCodec’s engine.
