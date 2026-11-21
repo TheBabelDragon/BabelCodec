@@ -3,10 +3,19 @@
   "$id": "https://thebabeldragon.github.io/BabelCodec/schemas/media/detection-result.v1.schema.json",
   "title": "BabelCodec Detection Result v1",
   "type": "object",
-  "required": ["schema", "byteLength", "findings", "alerts", "originalPreserved"],
+  "required": [
+    "schema",
+    "byteLength",
+    "findings",
+    "alerts",
+    "originalPreserved"
+  ],
   "properties": {
     "schema": { "const": "babelcodec.detection.v1" },
+    "originalByteLength": { "type": "integer", "minimum": 0 },
+    "scannedByteLength": { "type": "integer", "minimum": 0 },
     "byteLength": { "type": "integer", "minimum": 0 },
+    "truncated": { "type": "boolean" },
     "sourceKind": { "type": ["string", "null"] },
     "filename": { "type": ["string", "null"] },
     "declaredMime": { "type": ["string", "null"] },
@@ -19,13 +28,32 @@
       "type": "array",
       "items": { "$ref": "#/$defs/alert" }
     },
-    "limits": { "type": "object" },
-    "originalPreserved": { "type": "boolean" }
+    "limits": {
+      "type": "object",
+      "properties": {
+        "maxBytes": { "type": "integer", "minimum": 0 },
+        "maxFindings": { "type": "integer", "minimum": 0 },
+        "maxScanDepth": { "type": "integer", "minimum": 0 },
+        "maxWorkUnits": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "workUnitsUsed": { "type": "integer", "minimum": 0 },
+    "originalPreserved": { "type": "boolean" },
+    "originalRetrievableVia": { "type": ["string", "null"] }
   },
+  "additionalProperties": true,
   "$defs": {
     "finding": {
       "type": "object",
-      "required": ["finding_id", "type", "confidence", "offset", "length", "completeness"],
+      "required": [
+        "finding_id",
+        "type",
+        "confidence",
+        "offset",
+        "length",
+        "completeness"
+      ],
       "properties": {
         "finding_id": { "type": "string" },
         "type": { "type": "string" },
@@ -37,25 +65,47 @@
         "source_representation": { "type": "string" },
         "completeness": {
           "type": "string",
-          "enum": ["complete", "partial", "truncated", "malformed", "ambiguous", "unknown"]
+          "enum": [
+            "complete",
+            "partial",
+            "truncated",
+            "malformed",
+            "ambiguous",
+            "unknown"
+          ]
         },
         "parent_finding_id": { "type": ["string", "null"] },
         "relationships": { "type": "array" },
         "warnings": { "type": "array" },
         "supported": { "type": "boolean" },
         "decoder_available": { "type": "boolean" },
-        "alerts": { "type": "array", "items": { "$ref": "#/$defs/alert" } }
-      }
+        "alerts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/alert" }
+        },
+        "source_token": { "type": "string" },
+        "char_start": { "type": "integer", "minimum": 0 },
+        "char_end": { "type": "integer", "minimum": 0 },
+        "parent_offset": { "type": "number" },
+        "parent_length": { "type": "number" },
+        "parent_char_start": { "type": "integer", "minimum": 0 },
+        "parent_char_end": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
     },
     "alert": {
       "type": "object",
       "required": ["level", "code", "message"],
       "properties": {
-        "level": { "type": "string", "enum": ["info", "warning", "security", "unsupported"] },
+        "level": {
+          "type": "string",
+          "enum": ["info", "warning", "security", "unsupported"]
+        },
         "code": { "type": "string" },
         "message": { "type": "string" },
         "detail": {}
-      }
+      },
+      "additionalProperties": true
     }
   }
 }
