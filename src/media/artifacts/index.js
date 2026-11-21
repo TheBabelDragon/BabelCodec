@@ -99,8 +99,23 @@ export function getArtifactHistory(artifactId) {
   return _ledger().listRecords(artifactId);
 }
 
-export function getArtifactOutput(artifactId, revisionId) {
-  return _ledger().exportOutput(artifactId, revisionId);
+/**
+ * @param {string} artifactId
+ * @param {number} revisionId
+ * @param {'bytes'|'hex'|'base64'|'text'|'json-report'} [format]
+ */
+export function getArtifactOutput(artifactId, revisionId, format = 'bytes') {
+  return _ledger().exportOutput(artifactId, revisionId, format);
+}
+
+/**
+ * Clipboard-oriented complete output (does not write to clipboard itself).
+ * @param {string} artifactId
+ * @param {number} revisionId
+ * @param {{ format?: string }} [options]
+ */
+export function copyArtifactOutput(artifactId, revisionId, options = {}) {
+  return _ledger().copyOutput(artifactId, revisionId, options);
 }
 
 export function verifyArtifactOutput(artifactId, revisionId) {
@@ -109,4 +124,9 @@ export function verifyArtifactOutput(artifactId, revisionId) {
 
 export function restoreArtifactRevision(artifactId, revisionId) {
   return _ledger().restore(artifactId, revisionId);
+}
+
+/** Rehydrate ledger from IndexedDB (browser). */
+export async function restoreArtifactLedger() {
+  return _ledger().restoreAll();
 }
