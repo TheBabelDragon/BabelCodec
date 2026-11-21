@@ -38,14 +38,11 @@ const B64_ALPHABET =
   'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 function b64Index(c) {
-  const i = B64_ALPHABET.indexOf(c);
-  return i;
+  return B64_ALPHABET.indexOf(c);
 }
 
 /**
  * Canonical pad-bit check for a padded standard Base64 token.
- * For '=', the last 2 bits of the quantum must be 0.
- * For '==', the last 4 bits of the quantum must be 0.
  * @param {string} token
  * @returns {boolean}
  */
@@ -57,33 +54,23 @@ export function hasCanonicalPadBits(token) {
   if (pad > 2) return false;
   const body = token.slice(0, -pad);
   if (body.length < 2) return false;
-  // Last quantum is 4 chars including padding; last body char encodes trailing bits
   const last = body[body.length - 1];
   const idx = b64Index(last);
   if (idx < 0) return false;
-  if (pad === 1) {
-    // one padding char: 18 bits of data in 3 sextets; last 2 bits unused
-    return (idx & 0x03) === 0;
-  }
-  if (pad === 2) {
-    // two padding chars: 12 bits in 2 sextets; last 4 bits unused
-    return (idx & 0x0f) === 0;
-  }
+  if (pad === 1) return (idx & 0x03) === 0;
+  if (pad === 2) return (idx & 0x0f) === 0;
   return false;
 }
 
 /**
- * Standard Base64 syntax + canonical pad-bit validation.
  * @param {string} token
  * @param {{ requireCanonical?: boolean }} [opts]
- * @returns {boolean}
  */
 export function isValidBase64Token(token, opts = {}) {
   const requireCanonical = opts.requireCanonical !== false;
   if (!token || typeof token !== 'string') return false;
   if (token.length < 2) return false;
   if (/\s/.test(token)) return false;
-  // Standard alphabet only — reject Base64url chars
   if (/[-_]/.test(token)) return false;
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(token)) return false;
 
@@ -106,26 +93,16 @@ export function isValidBase64Token(token, opts = {}) {
   return true;
 }
 
-/**
- * Embedded candidate strength (not whole-input).
- * @param {string} token
- */
 export function isStrongEmbeddedBase64Candidate(token) {
   if (!isValidBase64Token(token)) return false;
   if (/=/.test(token)) return token.length >= 4;
   return token.length >= 8;
 }
 
-/**
- * Whole-input Base64 claim strength.
- * Short unpadded letter-only strings are ambiguous text, not Base64.
- * @param {string} token cleaned whole input
- */
 export function isStrongWholeInputBase64(token) {
   if (!isValidBase64Token(token)) return false;
   if (/=/.test(token)) return token.length >= 4;
   if (/[+\/]/.test(token)) return token.length >= 4;
-  // Unpadded pure alphanumeric: need length >= 8
   return token.length >= 8;
 }
 
@@ -482,8 +459,10 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
     );
   }
 
-  // Whole-input Base64 — evidence-based; reject ambiguous short words
-  if (isStrongWholeInputBase64(cleaned)) {
+  // Whole-input Base64
+  const syntaxOk = isValidBase64Token(cleaned, { requireCanonical: false });
+  const strong = isStrongWholeInputBase64(cleaned);
+  if (strong) {
     const conf =
       cleaned.length >= 16 ? 0.75 : cleaned.length >= 8 ? 0.55 : 0.4;
     findings.push(
@@ -508,13 +487,8 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
         ],
       }),
     );
-  } else if (
-    isValidBase64Token(cleaned, { requireCanonical: false }) &&
-    !isStrongWholeInputBase64(cleaned)
-  ) {
-    // Syntactically alphabet-like but ambiguous / noncanonical — do not claim Base64
-    // (e.g. HEAD). Leave to text classification.
-  } else if (isValidBase64Token(cleaned, { requireCanonical: false }) && !hasCanonicalPadBits(cleaned)) {
+  } else if (syntaxOk && /=/.test(cleaned) && !hasCanonicalPadBits(cleaned)) {
+    // Noncanonical padding bits — report malformed, do not claim complete Base64
     findings.push(
       createFinding({
         type: 'encoded',
@@ -534,6 +508,7 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
       }),
     );
   }
+  // else: ambiguous short unpadded text (HEAD etc.) — no Base64 finding
 
   const hexRe = /\b[0-9a-fA-F]{16,}\b/g;
   let m;
