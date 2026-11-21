@@ -84,6 +84,17 @@ jobs:
             tests/ui/**/*.test.js \
             tests/neural/**/*.test.js
 
+      - name: Install MCP server dependencies
+        run: |
+          cd services/mcp-server
+          # Include devDependencies for @modelcontextprotocol/client interop tests
+          npm ci 2>/dev/null || npm install
+
+      - name: Run MCP server tests
+        run: |
+          # Unit + official MCP client interop. WASM already built above.
+          npm run test:mcp
+
       - name: Build verification
         run: node scripts/build.js
 
