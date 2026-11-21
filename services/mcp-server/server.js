@@ -1,29 +1,28 @@
 /**
- * BabelCodec MCP Server — Streamable HTTP transport (JSON response mode).
- *
- * Adapter only: BabelCodec (Rust WASM Unicode core + JS orchestration) remains
- * the sole semantic authority. Independently deployable from GitHub Pages.
+ * BabelCodec MCP Server — official SDK Streamable HTTP transport.
+ * Adapter only. BabelCodec remains the Unicode authority.
  */
 
 import http from 'node:http';
 import { pathToFileURL } from 'node:url';
+import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
+import { toNodeHandler } from '@modelcontextprotocol/node';
+import * as z from 'zod/v4';
 import { config } from './config.js';
 import {
   setCors,
-  readBody,
   checkAuth,
   allowRate,
   clientKey,
+  assertProductionAuthConfig,
 } from './auth.js';
 import { ErrorCode, httpErrorBody } from './errors.js';
 import {
-  TOOL_REGISTRY,
+  TOOL_HANDLERS,
   ensureEngine,
   isEngineReady,
   getEngineVersion,
 } from './tools.js';
-
-const toolsByName = new Map(TOOL_REGISTRY.map((t) => [t.name, t]));
 
 function json(res, status, body) {
   const data = JSON.stringify(body);
@@ -35,142 +34,115 @@ function json(res, status, body) {
   res.end(data);
 }
 
-/** Minimal MCP JSON-RPC handler (initialize, tools/list, tools/call). */
-export async function handleMcpJsonRpc(body) {
-  let msg;
-  try {
-    msg = typeof body === 'string' ? JSON.parse(body) : body;
-  } catch {
-    return {
-      status: 400,
-      payload: {
-        jsonrpc: '2.0',
-        error: { code: -32700, message: 'Parse error' },
-        id: null,
-      },
-    };
-  }
-
-  const id = msg?.id ?? null;
-  const method = msg?.method;
-  const params = msg?.params || {};
-
-  if (method === 'initialize') {
-    return {
-      status: 200,
-      payload: {
-        jsonrpc: '2.0',
-        id,
-        result: {
-          protocolVersion: params.protocolVersion || '2024-11-05',
-          capabilities: { tools: { listChanged: false } },
-          serverInfo: {
-            name: config.SERVER_NAME,
-            version: config.SERVER_VERSION,
-          },
-        },
-      },
-    };
-  }
-
-  if (method === 'notifications/initialized' || method === 'initialized') {
-    return { status: 202, payload: null };
-  }
-
-  if (method === 'tools/list') {
-    return {
-      status: 200,
-      payload: {
-        jsonrpc: '2.0',
-        id,
-        result: {
-          tools: TOOL_REGISTRY.map((t) => ({
-            name: t.name,
-            description: t.description,
-            inputSchema: t.inputSchema,
-          })),
-        },
-      },
-    };
-  }
-
-  if (method === 'tools/call') {
-    const name = params.name;
-    const args = params.arguments || {};
-    const entry = toolsByName.get(name);
-    if (!entry) {
-      return {
-        status: 200,
-        payload: {
-          jsonrpc: '2.0',
-          id,
-          error: {
-            code: -32601,
-            message: `Unknown tool: ${name}`,
-            data: { code: ErrorCode.UNSUPPORTED_OPERATION },
-          },
-        },
-      };
-    }
-
-    try {
-      const result = await entry.handler(args);
-      const isErr = result && result.success === false;
-      return {
-        status: 200,
-        payload: {
-          jsonrpc: '2.0',
-          id,
-          result: {
-            content: [
-              { type: 'text', text: JSON.stringify(result, null, 0) },
-            ],
-            structuredContent: result,
-            isError: isErr,
-          },
-        },
-      };
-    } catch {
-      return {
-        status: 200,
-        payload: {
-          jsonrpc: '2.0',
-          id,
-          result: {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  schema: 'babelcodec.mcp.error.v1',
-                  success: false,
-                  code: ErrorCode.INTERNAL_ERROR,
-                  message: 'Internal tool error',
-                }),
-              },
-            ],
-            isError: true,
-          },
-        },
-      };
-    }
-  }
-
-  if (method === 'ping') {
-    return {
-      status: 200,
-      payload: { jsonrpc: '2.0', id, result: {} },
-    };
-  }
-
+function toolResult(payload) {
+  const isErr = payload && payload.success === false;
   return {
-    status: 200,
-    payload: {
-      jsonrpc: '2.0',
-      id,
-      error: { code: -32601, message: `Method not found: ${method}` },
-    },
+    content: [{ type: 'text', text: JSON.stringify(payload) }],
+    structuredContent: payload,
+    isError: !!isErr,
   };
 }
+
+/** Build a fresh McpServer per request (stateless). */
+export function createBabelMcpServer() {
+  const server = new McpServer({
+    name: config.SERVER_NAME,
+    version: config.SERVER_VERSION,
+  });
+
+  server.registerTool(
+    'babelcodec_capabilities',
+    {
+      title: 'BabelCodec capabilities',
+      description:
+        'Return actual supported BabelCodec capabilities: engine version, codecs, script adapters, normalization profiles, inspection ops, WASM readiness, and known limitations. Does not provide natural-language translation.',
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true },
+    },
+    async () => toolResult(await TOOL_HANDLERS.babelcodec_capabilities()),
+  );
+
+  server.registerTool(
+    'babelcodec_inspect_text',
+    {
+      title: 'Inspect text',
+      description:
+        'Inspect text via BabelCodec toCanonical(): code points, graphemes, primary/mixed scripts, normalization state, engine identity. Source is always preserved.',
+      inputSchema: z.object({
+        text: z.string().describe('Text to inspect'),
+      }),
+      annotations: { readOnlyHint: true },
+    },
+    async (args) => toolResult(await TOOL_HANDLERS.babelcodec_inspect_text(args)),
+  );
+
+  server.registerTool(
+    'babelcodec_normalize_text',
+    {
+      title: 'Normalize text',
+      description:
+        'Normalize text with an explicit profile (NONE, NFC, NFD, NFKC, NFKD) using the Rust-backed engine. Original source is never silently replaced.',
+      inputSchema: z.object({
+        text: z.string().describe('Text to normalize'),
+        profile: z
+          .enum(['NONE', 'NFC', 'NFD', 'NFKC', 'NFKD'])
+          .optional()
+          .describe('Normalization profile'),
+      }),
+      annotations: { readOnlyHint: true },
+    },
+    async (args) => toolResult(await TOOL_HANDLERS.babelcodec_normalize_text(args)),
+  );
+
+  server.registerTool(
+    'babelcodec_detect_scripts',
+    {
+      title: 'Detect scripts',
+      description:
+        'Detect Unicode Script property distribution (primary script, distribution, mixed status). Not language identification and not translation.',
+      inputSchema: z.object({
+        text: z.string().describe('Text to analyze'),
+      }),
+      annotations: { readOnlyHint: true },
+    },
+    async (args) => toolResult(await TOOL_HANDLERS.babelcodec_detect_scripts(args)),
+  );
+
+  server.registerTool(
+    'babelcodec_inspect_hebrew',
+    {
+      title: 'Inspect Hebrew',
+      description:
+        'Hebrew script adapter: detection, scalar categories (letters, finals, niqqud, cantillation), optional standard gematria, canonical form.',
+      inputSchema: z.object({
+        text: z.string().describe('Text to inspect for Hebrew'),
+        include_gematria: z
+          .boolean()
+          .optional()
+          .describe('Include standard gematria analysis'),
+      }),
+      annotations: { readOnlyHint: true },
+    },
+    async (args) => toolResult(await TOOL_HANDLERS.babelcodec_inspect_hebrew(args)),
+  );
+
+  server.registerTool(
+    'babelcodec_list_codecs',
+    {
+      title: 'List codecs',
+      description:
+        'Return the BabelCodec codec registry and supported encoding operations from the public API. Fails explicitly if the registry cannot load.',
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true },
+    },
+    async () => toolResult(await TOOL_HANDLERS.babelcodec_list_codecs()),
+  );
+
+  return server;
+}
+
+const mcpHandler = createMcpHandler(createBabelMcpServer);
+const nodeMcpHandler = toNodeHandler(mcpHandler);
 
 export function createServer() {
   return http.createServer(async (req, res) => {
@@ -201,6 +173,8 @@ export function createServer() {
           engine_ready: isEngineReady(),
           engine_version: getEngineVersion(),
           auth_required: config.REQUIRE_AUTH || Boolean(config.MCP_TOKEN),
+          transport: 'streamable-http',
+          sdk: '@modelcontextprotocol/server',
         });
       }
 
@@ -221,43 +195,7 @@ export function createServer() {
           );
         }
 
-        if (req.method === 'GET') {
-          return json(res, 405, {
-            error: 'Use POST for MCP JSON-RPC (JSON response mode)',
-            code: 'METHOD_NOT_ALLOWED',
-          });
-        }
-
-        if (req.method !== 'POST') {
-          return json(
-            res,
-            405,
-            httpErrorBody('METHOD_NOT_ALLOWED', 'method not allowed', 405),
-          );
-        }
-
-        let raw;
-        try {
-          raw = await readBody(req);
-        } catch (e) {
-          if (e.code === ErrorCode.BODY_TOO_LARGE) {
-            return json(
-              res,
-              413,
-              httpErrorBody(ErrorCode.BODY_TOO_LARGE, 'body too large', 413),
-            );
-          }
-          throw e;
-        }
-
-        const text = raw.toString('utf8') || '{}';
-        const { status, payload } = await handleMcpJsonRpc(text);
-        if (payload == null) {
-          res.writeHead(status || 202);
-          res.end();
-          return;
-        }
-        return json(res, status, payload);
+        return void nodeMcpHandler(req, res);
       }
 
       return json(res, 404, httpErrorBody('NOT_FOUND', 'not found', 404));
@@ -288,10 +226,9 @@ const isMain =
   process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
 
 if (isMain) {
-  if (config.isProduction && config.REQUIRE_AUTH && !config.MCP_TOKEN) {
-    console.error(
-      '[babelcodec-mcp] FATAL: production requires MCP_TOKEN (or set REQUIRE_AUTH=false explicitly).',
-    );
+  const authGate = assertProductionAuthConfig();
+  if (!authGate.ok) {
+    console.error(`[babelcodec-mcp] FATAL: ${authGate.message}`);
     process.exit(1);
   }
 
@@ -301,7 +238,7 @@ if (isMain) {
       `[babelcodec-mcp] ${config.SERVER_NAME} v${config.SERVER_VERSION} listening on http://${config.HOST}:${config.PORT}${config.MCP_PATH}`,
     );
     console.log(
-      `[babelcodec-mcp] health=http://${config.HOST}:${config.PORT}${config.HEALTH_PATH} auth=${config.REQUIRE_AUTH || Boolean(config.MCP_TOKEN)}`,
+      `[babelcodec-mcp] health=http://${config.HOST}:${config.PORT}${config.HEALTH_PATH} auth=${config.REQUIRE_AUTH || Boolean(config.MCP_TOKEN)} transport=streamable-http`,
     );
     await tryWarmEngine();
   });
@@ -315,4 +252,4 @@ if (isMain) {
   process.on('SIGTERM', shutdown);
 }
 
-export { toolsByName };
+export { mcpHandler };
