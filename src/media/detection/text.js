@@ -2,10 +2,9 @@
  * Text / encoding / structured-text probes.
  *
  * Base64 policy (standard alphabet only; Base64url deferred):
- * - Whole-input: require padding, or length >= 8, or +/ present — never claim
- *   short unpadded letter-only words (HEAD, TAIL, TEST, DATA) as Base64.
- * - Embedded: padded short tokens OK; unpadded alphabet-only require length >= 8.
- * - Canonical pad bits validated per RFC 4648 (unused bits must be zero).
+ * - Whole-input: padding, length >= 8, or +/ — never HEAD/TAIL/TEST/DATA.
+ * - Embedded: padded short OK; unpadded alphabet-only length >= 8.
+ * - Canonical RFC 4648 pad bits for both padded and unpadded forms.
  */
 
 import { createFinding, createAlert } from './finding.js';
@@ -42,23 +41,44 @@ function b64Index(c) {
 }
 
 /**
- * Canonical pad-bit check for a padded standard Base64 token.
- * @param {string} token
+ * Canonical unused-bit check for standard Base64 (padded or unpadded).
+ *
+ * Final quantum:
+ * - len % 4 === 2 (one data byte / == form): second sextet low 4 bits must be 0
+ * - len % 4 === 3 (two data bytes / = form): third sextet low 2 bits must be 0
+ * - len % 4 === 0: full groups; no trailing unused bits
+ *
+ * @param {string} token  alphabet body without counting only trailing '=', or full token
  * @returns {boolean}
  */
 export function hasCanonicalPadBits(token) {
-  if (!token || !/=/.test(token)) return true;
+  if (!token || typeof token !== 'string') return false;
+
   const padMatch = token.match(/=+$/);
   const pad = padMatch ? padMatch[0].length : 0;
-  if (pad === 0) return true;
   if (pad > 2) return false;
-  const body = token.slice(0, -pad);
-  if (body.length < 2) return false;
+  if (pad && token.indexOf('=') !== token.length - pad) return false;
+
+  const body = pad ? token.slice(0, -pad) : token;
+  if (!body.length || !/^[A-Za-z0-9+/]+$/.test(body)) return false;
+
+  // Effective length of the final quantum in alphabet chars
+  const mod = body.length % 4;
+  if (mod === 1) return false; // impossible
+  if (mod === 0) return true; // complete groups
+
   const last = body[body.length - 1];
   const idx = b64Index(last);
   if (idx < 0) return false;
-  if (pad === 1) return (idx & 0x03) === 0;
-  if (pad === 2) return (idx & 0x0f) === 0;
+
+  if (mod === 2) {
+    // one data byte → 8 bits in 2 sextets; 4 low bits of second must be 0
+    return (idx & 0x0f) === 0;
+  }
+  if (mod === 3) {
+    // two data bytes → 16 bits in 3 sextets; 2 low bits of third must be 0
+    return (idx & 0x03) === 0;
+  }
   return false;
 }
 
@@ -89,7 +109,7 @@ export function isValidBase64Token(token, opts = {}) {
     return false;
   }
 
-  if (requireCanonical && pad && !hasCanonicalPadBits(token)) return false;
+  if (requireCanonical && !hasCanonicalPadBits(token)) return false;
   return true;
 }
 
@@ -459,7 +479,6 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
     );
   }
 
-  // Whole-input Base64
   const syntaxOk = isValidBase64Token(cleaned, { requireCanonical: false });
   const strong = isStrongWholeInputBase64(cleaned);
   if (strong) {
@@ -487,8 +506,7 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
         ],
       }),
     );
-  } else if (syntaxOk && /=/.test(cleaned) && !hasCanonicalPadBits(cleaned)) {
-    // Noncanonical padding bits — report malformed, do not claim complete Base64
+  } else if (syntaxOk && !hasCanonicalPadBits(cleaned)) {
     findings.push(
       createFinding({
         type: 'encoded',
@@ -503,12 +521,11 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
         char_start: 0,
         char_end: text.length,
         alerts: [
-          createAlert('warning', 'NONCANONICAL_BASE64', 'Base64 padding bits are non-zero (noncanonical)'),
+          createAlert('warning', 'NONCANONICAL_BASE64', 'Base64 unused pad bits are non-zero (noncanonical)'),
         ],
       }),
     );
   }
-  // else: ambiguous short unpadded text (HEAD etc.) — no Base64 finding
 
   const hexRe = /\b[0-9a-fA-F]{16,}\b/g;
   let m;
