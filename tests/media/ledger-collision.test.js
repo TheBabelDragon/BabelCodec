@@ -17,6 +17,19 @@ function artifact(id, revision, bytes, hash) {
   };
 }
 
+function artifactNoBytes(id, revision, hash) {
+  return {
+    schema: 'babelcodec.artifact.v1',
+    id,
+    revision,
+    source: { kind: 'bytes', name: null, mimeType: null, filename: null },
+    representations: { bytes: null, text: null, image: null },
+    metadata: { byteLength: 0 },
+    hashes: { sha256: hash },
+    provenance: { parentArtifactId: null, parentRevision: null, operation: 'test' },
+  };
+}
+
 describe('ledger revision content collision', () => {
   it('identical content is idempotent duplicate', async () => {
     const ledger = createArtifactLedger({ disableIdb: true });
@@ -57,5 +70,20 @@ describe('ledger revision content collision', () => {
     }
     assert.ok(err);
     assert.equal(err.code, 'HASH_MISMATCH');
+  });
+
+  it('matching hashes without bytes do not establish identity', async () => {
+    const ledger = createArtifactLedger({ disableIdb: true });
+    const h = 'a'.repeat(64);
+    // First commit with no bytes still creates a revision slot
+    await ledger.commit(artifactNoBytes('a3', 1, h), { persist: false });
+    let err;
+    try {
+      await ledger.commit(artifactNoBytes('a3', 1, h), { persist: false });
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err);
+    assert.equal(err.code, 'REVISION_IDENTITY_UNVERIFIED');
   });
 });
