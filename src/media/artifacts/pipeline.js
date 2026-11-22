@@ -1,8 +1,13 @@
 /**
  * High-level pipeline: input → detect → artifact → hash → ledger.
+ *
+ * Acquisition policy: by default, ingestion stores the same bounded representation
+ * used for detection (maxBytes). Full-original archival requires explicit
+ * opts.storeFullOriginal === true (still subject to a separate fullOriginalMaxBytes).
  */
 
 import { detectInput, normalizeInput } from '../detection/index.js';
+import { resolveLimits } from '../detection/limits.js';
 import { fromBytes, fromText } from './representations-service.js';
 import { analyzeArtifact } from './analyze.js';
 import { withHash } from './artifact.js';
@@ -10,8 +15,6 @@ import { getDefaultLedger } from './ledger.js';
 import { copyBytes } from './representations.js';
 
 /**
- * Ingest arbitrary input: normalize, detect, create artifact, hash, ledger commit.
- *
  * @param {string|Uint8Array|ArrayBuffer|ArrayBufferView|File|Blob} input
  * @param {{
  *   typeHint?: string,
@@ -19,19 +22,45 @@ import { copyBytes } from './representations.js';
  *   mimeType?: string,
  *   ledger?: ReturnType<import('./ledger.js').createArtifactLedger>,
  *   detectOptions?: object,
+ *   storeFullOriginal?: boolean,
+ *   fullOriginalMaxBytes?: number,
  * }} [opts]
  */
 export async function ingestInput(input, opts = {}) {
+  const detectOptions = { ...(opts.detectOptions || {}) };
+  const limits = resolveLimits(detectOptions.limits);
+
   const detection = await detectInput(input, {
     typeHint: opts.typeHint,
-    ...(opts.detectOptions || {}),
+    ...detectOptions,
+    limits,
   });
 
+  // Acquisition for storage: same bound as detection unless explicit full-original opt-in
+  let storeMax = limits.maxBytes;
+  if (opts.storeFullOriginal === true) {
+    storeMax =
+      opts.fullOriginalMaxBytes != null && Number.isFinite(opts.fullOriginalMaxBytes)
+        ? Math.floor(opts.fullOriginalMaxBytes)
+        : limits.maxBytes;
+  }
+
   let artifact;
-  if (typeof input === 'string') {
+  let acquisition;
+  if (typeof input === 'string' && opts.storeFullOriginal !== true && !detection.truncated) {
     artifact = fromText(input, { filename: opts.filename });
+    acquisition = {
+      originalByteLength: detection.originalByteLength,
+      acquiredByteLength: detection.acquiredByteLength ?? detection.byteLength,
+      truncated: false,
+    };
   } else {
-    const norm = await normalizeInput(input);
+    const norm = await normalizeInput(input, { maxBytes: storeMax });
+    acquisition = {
+      originalByteLength: norm.originalByteLength ?? norm.bytes.byteLength,
+      acquiredByteLength: norm.bytes.byteLength,
+      truncated: Boolean(norm.truncatedAtAcquisition),
+    };
     artifact = fromBytes(norm.bytes, {
       filename: opts.filename || norm.filename,
       mimeType: opts.mimeType || norm.declaredMime,
@@ -50,6 +79,7 @@ export async function ingestInput(input, opts = {}) {
       detectionSchema: detection.schema,
       findingCount: detection.findings.length,
       detectionAlerts: detection.alerts.length,
+      acquisition,
     },
   };
 
@@ -60,6 +90,8 @@ export async function ingestInput(input, opts = {}) {
       schema: detection.schema,
       findingCount: detection.findings.length,
       alerts: detection.alerts,
+      truncated: detection.truncated,
+      analysisComplete: detection.analysisComplete,
     },
     sourceRepresentation: detection.sourceKind || 'bytes',
     destinationRepresentation: 'artifact',
@@ -68,14 +100,17 @@ export async function ingestInput(input, opts = {}) {
   return {
     artifact,
     analysis,
-    detection,
+    detection: {
+      ...detection,
+      ledgerCommitted: true,
+      originalRetrievableVia: 'artifact-ledger',
+      storageStatus: record.storageStatus,
+    },
     ledgerRecord: record,
+    acquisition,
   };
 }
 
-/**
- * Analyze payload already held as an artifact.
- */
 export async function analyzePayload(artifact, options = {}) {
   const bytes = artifact.representations?.bytes;
   if (!bytes) {
@@ -87,6 +122,8 @@ export async function analyzePayload(artifact, options = {}) {
         findings: [],
         alerts: [{ level: 'warning', code: 'NO_BYTES', message: 'No bytes to analyze' }],
         originalPreserved: true,
+        ledgerCommitted: false,
+        originalRetrievableVia: null,
       },
       analysis: analyzeArtifact(artifact, { computeHash: false }),
     };

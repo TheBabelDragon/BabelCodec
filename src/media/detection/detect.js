@@ -13,24 +13,39 @@ import { probeTextAndEncoding, probeStructuredText, probeEncodedForms } from './
 const SCHEMA = 'babelcodec.detection.v1';
 
 /**
- * Normalize input with optional maxBytes acquisition bound for Blob/File.
+ * Normalize input; when maxBytes is set, copy only the permitted prefix.
  * @param {*} input
  * @param {{ maxBytes?: number }} [opts]
  */
 export async function normalizeInput(input, opts = {}) {
-  const maxBytes = opts.maxBytes;
+  const maxBytes =
+    opts.maxBytes != null && Number.isFinite(opts.maxBytes) && opts.maxBytes >= 0
+      ? Math.floor(opts.maxBytes)
+      : null;
 
   if (input == null) {
     return { bytes: new Uint8Array(0), text: '', sourceKind: 'empty', originalByteLength: 0 };
   }
 
   if (typeof input === 'string') {
-    const bytes = encodeUtf8(input);
+    // Encode once; if over maxBytes, keep only the UTF-8 prefix (may split a multi-byte char)
+    const full = encodeUtf8(input);
+    const originalByteLength = full.byteLength;
+    if (maxBytes != null && full.byteLength > maxBytes) {
+      return {
+        bytes: copyBytes(full.subarray(0, maxBytes)),
+        text: null,
+        sourceKind: 'text',
+        originalByteLength,
+        truncatedAtAcquisition: true,
+      };
+    }
     return {
-      bytes,
+      bytes: full,
       text: input,
       sourceKind: 'text',
-      originalByteLength: bytes.byteLength,
+      originalByteLength,
+      truncatedAtAcquisition: false,
     };
   }
 
@@ -74,27 +89,33 @@ export async function normalizeInput(input, opts = {}) {
   }
 
   if (input instanceof ArrayBuffer) {
-    const full = copyBytes(input);
-    const originalByteLength = full.byteLength;
-    let bytes = full;
-    let truncatedAtAcquisition = false;
-    if (maxBytes != null && full.byteLength > maxBytes) {
-      bytes = copyBytes(full.subarray(0, maxBytes));
-      truncatedAtAcquisition = true;
-    }
-    return { bytes, text: null, sourceKind: 'bytes', originalByteLength, truncatedAtAcquisition };
+    const originalByteLength = input.byteLength;
+    const take =
+      maxBytes != null && originalByteLength > maxBytes ? maxBytes : originalByteLength;
+    const bytes = new Uint8Array(take);
+    bytes.set(new Uint8Array(input, 0, take));
+    return {
+      bytes,
+      text: null,
+      sourceKind: 'bytes',
+      originalByteLength,
+      truncatedAtAcquisition: take < originalByteLength,
+    };
   }
 
   if (ArrayBuffer.isView(input)) {
-    const full = copyBytes(input);
-    const originalByteLength = full.byteLength;
-    let bytes = full;
-    let truncatedAtAcquisition = false;
-    if (maxBytes != null && full.byteLength > maxBytes) {
-      bytes = copyBytes(full.subarray(0, maxBytes));
-      truncatedAtAcquisition = true;
-    }
-    return { bytes, text: null, sourceKind: 'bytes', originalByteLength, truncatedAtAcquisition };
+    const originalByteLength = input.byteLength;
+    const take =
+      maxBytes != null && originalByteLength > maxBytes ? maxBytes : originalByteLength;
+    const bytes = new Uint8Array(take);
+    bytes.set(new Uint8Array(input.buffer, input.byteOffset, take));
+    return {
+      bytes,
+      text: null,
+      sourceKind: 'bytes',
+      originalByteLength,
+      truncatedAtAcquisition: take < originalByteLength,
+    };
   }
 
   throw new Error('Unsupported input type for detection');
@@ -125,6 +146,7 @@ export async function detectInput(input, options = {}) {
   const limits = resolveLimits(options.limits);
   const alerts = [];
   const budget = { units: 0, max: limits.maxWorkUnits };
+  let nestedDecodedBytes = 0;
 
   const normalized = await normalizeInput(input, { maxBytes: limits.maxBytes });
   const originalByteLength =
@@ -134,13 +156,7 @@ export async function detectInput(input, options = {}) {
   let bytes = normalized.bytes;
   let truncated = Boolean(normalized.truncatedAtAcquisition);
 
-  if (!truncated && bytes.byteLength > limits.maxBytes) {
-    alerts.push(
-      createAlert('security', 'SIZE_LIMIT', `Input exceeds maxBytes (${limits.maxBytes}); scan truncated`),
-    );
-    bytes = bytes.subarray(0, limits.maxBytes);
-    truncated = true;
-  } else if (truncated) {
+  if (truncated) {
     alerts.push(
       createAlert(
         'security',
@@ -151,6 +167,7 @@ export async function detectInput(input, options = {}) {
   }
 
   const findings = [];
+  let analysisComplete = true;
 
   for (const f of probeBinarySignatures(bytes, {
     maxFindings: limits.maxFindings,
@@ -163,6 +180,7 @@ export async function detectInput(input, options = {}) {
     for (const f of probeTextAndEncoding(bytes)) {
       findings.push(f);
       budget.units += 2;
+      if (budget.units >= budget.max) break;
     }
   }
 
@@ -207,6 +225,9 @@ export async function detectInput(input, options = {}) {
 
       for (const b64Finding of b64Candidates.slice(0, 3)) {
         if (budget.units >= budget.max) break;
+        const remaining = budget.max - budget.units;
+        if (remaining <= 0) break;
+
         const token = extractToken(b64Finding, text);
         if (!token) {
           b64Finding.alerts = [
@@ -216,10 +237,30 @@ export async function detectInput(input, options = {}) {
           continue;
         }
         try {
-          if (token.length * 0.75 > limits.maxNestedDecodeBytes) continue;
+          const estimated = Math.floor(token.length * 0.75);
+          if (estimated > limits.maxNestedDecodeBytes) continue;
+          if (nestedDecodedBytes + estimated > limits.maxNestedDecodeBytes) {
+            alerts.push(
+              createAlert(
+                'security',
+                'NESTED_BYTE_LIMIT',
+                'Aggregate nested decode byte limit reached; further nested decoding stopped',
+              ),
+            );
+            analysisComplete = false;
+            break;
+          }
+
           const decoded = decodeBase64(token);
           budget.units += 15;
           if (decoded.byteLength <= 0 || decoded.byteLength > limits.maxNestedDecodeBytes) continue;
+          nestedDecodedBytes += decoded.byteLength;
+
+          const childMax = Math.max(0, budget.max - budget.units);
+          if (childMax <= 0) {
+            analysisComplete = false;
+            break;
+          }
 
           const nested = await detectInput(decoded, {
             typeHint: options.typeHint,
@@ -227,11 +268,11 @@ export async function detectInput(input, options = {}) {
             decodeNested: depthLeft - 1 > 0,
             limits: {
               ...limits,
-              maxFindings: 8,
-              maxWorkUnits: Math.max(50, budget.max - budget.units),
+              maxFindings: Math.min(8, limits.maxFindings),
+              maxWorkUnits: childMax,
             },
           });
-          budget.units += nested.workUnitsUsed || 10;
+          budget.units += nested.workUnitsUsed || 0;
 
           for (const nf of nested.findings || []) {
             if (findings.length >= limits.maxFindings) break;
@@ -315,6 +356,7 @@ export async function detectInput(input, options = {}) {
   }
 
   if (budget.units >= budget.max) {
+    analysisComplete = false;
     alerts.push(
       createAlert('security', 'WORK_LIMIT', 'Detection work limit reached during scan; results may be partial'),
     );
@@ -322,17 +364,18 @@ export async function detectInput(input, options = {}) {
 
   const capped = findings.slice(0, limits.maxFindings);
   if (findings.length > limits.maxFindings) {
+    analysisComplete = false;
     alerts.push(createAlert('warning', 'FINDING_CAP', `Findings capped at ${limits.maxFindings}`));
   }
 
-  // Preservation semantics: detection does not mutate caller input; standalone
-  // detectInput does NOT create a ledger entry.
   return {
     schema: SCHEMA,
     originalByteLength,
+    acquiredByteLength: bytes.byteLength,
     scannedByteLength: bytes.byteLength,
     byteLength: bytes.byteLength,
     truncated,
+    analysisComplete,
     sourceKind: normalized.sourceKind,
     filename: normalized.filename ?? null,
     declaredMime: normalized.declaredMime ?? null,
@@ -346,16 +389,9 @@ export async function detectInput(input, options = {}) {
       maxWorkUnits: limits.maxWorkUnits,
     },
     workUnitsUsed: budget.units,
-    /** Detection did not modify the caller-supplied input. */
     inputUnmodified: true,
-    /** Original bytes remain available to the caller (not claimed via ledger). */
     originalAvailableToCaller: true,
-    /**
-     * @deprecated Prefer inputUnmodified / originalAvailableToCaller.
-     * True means detection did not mutate the input; does NOT imply ledger storage.
-     */
     originalPreserved: true,
-    /** Standalone detection does not commit to the ledger. */
     originalRetrievableVia: null,
     ledgerCommitted: false,
     storageStatus: null,
