@@ -59,8 +59,12 @@ describe('bounded UTF-8 string acquisition', () => {
     const s = 'a'.repeat(500);
     const r = await detectInput(s, { limits: { maxBytes: 50 } });
     assert.equal(r.truncated, true);
-    assert.equal(r.originalByteLength, 500);
+    // Exact original UTF-8 length is unknown without scanning the remainder.
+    assert.equal(r.originalByteLength, null);
+    assert.equal(r.originalByteLengthExact, false);
     assert.equal(r.acquiredByteLength, 50);
+    assert.ok(r.originalByteLengthAtLeast > r.acquiredByteLength);
+    assert.equal(r.byteLength, 50);
   });
 
   it('handles multibyte boundary without invalid trailing UTF-8', async () => {
@@ -68,5 +72,26 @@ describe('bounded UTF-8 string acquisition', () => {
     const r = await detectInput(s, { limits: { maxBytes: 5 } });
     assert.equal(r.truncated, true);
     assert.ok(r.acquiredByteLength <= 5);
+    assert.equal(r.originalByteLengthExact, false);
+    assert.equal(r.originalByteLength, null);
+  });
+
+  it('exact-limit ASCII string reports exact original length', async () => {
+    const s = 'b'.repeat(40);
+    const r = await detectInput(s, { limits: { maxBytes: 40 } });
+    assert.equal(r.truncated, false);
+    assert.equal(r.originalByteLengthExact, true);
+    assert.equal(r.originalByteLength, 40);
+    assert.equal(r.acquiredByteLength, 40);
+  });
+
+  it('one-byte-over limit truncates with unknown exact original', async () => {
+    const s = 'c'.repeat(41);
+    const r = await detectInput(s, { limits: { maxBytes: 40 } });
+    assert.equal(r.truncated, true);
+    assert.equal(r.acquiredByteLength, 40);
+    assert.equal(r.originalByteLengthExact, false);
+    assert.equal(r.originalByteLength, null);
+    assert.ok(r.originalByteLengthAtLeast > 40);
   });
 });
