@@ -9,6 +9,28 @@
 
 import { createFinding, createAlert } from './finding.js';
 
+function budgetMax(budget) {
+  if (!budget) return Infinity;
+  return budget.maxUnits != null ? budget.maxUnits : budget.max != null ? budget.max : Infinity;
+}
+
+function budgetExhausted(budget) {
+  if (!budget) return false;
+  if (budget.stopped) return true;
+  return budget.units >= budgetMax(budget);
+}
+
+function chargeBudget(budget, cost = 1) {
+  if (!budget) return true;
+  budget.units += cost;
+  if (budget.units >= budgetMax(budget)) {
+    budget.stopped = true;
+    if (!budget.stoppedReason) budget.stoppedReason = 'WORK_LIMIT';
+    return false;
+  }
+  return true;
+}
+
 export function charRangeToUtf8Bytes(text, charStart, charEnd) {
   let byteStart = 0;
   for (let i = 0; i < charStart && i < text.length; i++) {
@@ -40,17 +62,6 @@ function b64Index(c) {
   return B64_ALPHABET.indexOf(c);
 }
 
-/**
- * Canonical unused-bit check for standard Base64 (padded or unpadded).
- *
- * Final quantum:
- * - len % 4 === 2 (one data byte / == form): second sextet low 4 bits must be 0
- * - len % 4 === 3 (two data bytes / = form): third sextet low 2 bits must be 0
- * - len % 4 === 0: full groups; no trailing unused bits
- *
- * @param {string} token  alphabet body without counting only trailing '=', or full token
- * @returns {boolean}
- */
 export function hasCanonicalPadBits(token) {
   if (!token || typeof token !== 'string') return false;
 
@@ -62,30 +73,19 @@ export function hasCanonicalPadBits(token) {
   const body = pad ? token.slice(0, -pad) : token;
   if (!body.length || !/^[A-Za-z0-9+/]+$/.test(body)) return false;
 
-  // Effective length of the final quantum in alphabet chars
   const mod = body.length % 4;
-  if (mod === 1) return false; // impossible
-  if (mod === 0) return true; // complete groups
+  if (mod === 1) return false;
+  if (mod === 0) return true;
 
   const last = body[body.length - 1];
   const idx = b64Index(last);
   if (idx < 0) return false;
 
-  if (mod === 2) {
-    // one data byte → 8 bits in 2 sextets; 4 low bits of second must be 0
-    return (idx & 0x0f) === 0;
-  }
-  if (mod === 3) {
-    // two data bytes → 16 bits in 3 sextets; 2 low bits of third must be 0
-    return (idx & 0x03) === 0;
-  }
+  if (mod === 2) return (idx & 0x0f) === 0;
+  if (mod === 3) return (idx & 0x03) === 0;
   return false;
 }
 
-/**
- * @param {string} token
- * @param {{ requireCanonical?: boolean }} [opts]
- */
 export function isValidBase64Token(token, opts = {}) {
   const requireCanonical = opts.requireCanonical !== false;
   if (!token || typeof token !== 'string') return false;
@@ -126,11 +126,16 @@ export function isStrongWholeInputBase64(token) {
   return token.length >= 8;
 }
 
-export function scanBase64Tokens(text) {
+export function scanBase64Tokens(text, opts = {}) {
   const out = [];
+  const budget = opts.budget || null;
+  const maxCandidates = opts.maxCandidates ?? 32;
   const re = /(?:^|[^A-Za-z0-9+/])([A-Za-z0-9+/]{2,}={0,2})(?![A-Za-z0-9+/=])/g;
   let m;
   while ((m = re.exec(text))) {
+    if (budgetExhausted(budget)) break;
+    if (!chargeBudget(budget, 1)) break;
+    if (out.length >= maxCandidates) break;
     const token = m[1];
     if (!isStrongEmbeddedBase64Candidate(token)) continue;
     if (/^[0-9a-fA-F]+$/.test(token) && token.length % 2 === 0) continue;
@@ -307,41 +312,61 @@ export function probeStructuredText(text, byteLength, opts = {}) {
     (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
     (trimmed.startsWith('[') && trimmed.endsWith(']'))
   ) {
-    try {
-      JSON.parse(trimmed);
+    if (trimmed.length > 256 * 1024) {
       findings.push(
         createFinding({
           type: 'structured',
           subtype: 'json',
-          confidence: 0.92,
-          evidence: ['json-parse-ok', 'whole-input'],
+          confidence: 0.3,
+          evidence: ['json-like-brackets', 'size-gate'],
           offset: 0,
           length: len,
-          completeness: 'complete',
-          decoder_available: true,
-        }),
-      );
-    } catch {
-      findings.push(
-        createFinding({
-          type: 'structured',
-          subtype: 'json',
-          confidence: 0.45,
-          evidence: ['json-like-brackets', 'json-parse-failed'],
-          offset: 0,
-          length: len,
-          completeness: 'malformed',
+          completeness: 'ambiguous',
           decoder_available: false,
-          alerts: [createAlert('warning', 'MALFORMED_JSON', 'JSON-like structure failed to parse')],
+          alerts: [createAlert('warning', 'JSON_SIZE_GATE', 'JSON-like input exceeds parse size gate')],
         }),
       );
+    } else {
+      if (!chargeBudget(budget, Math.min(50, Math.ceil(trimmed.length / 64)))) {
+        /* budget exhausted before parse */
+      } else {
+        try {
+          JSON.parse(trimmed);
+          findings.push(
+            createFinding({
+              type: 'structured',
+              subtype: 'json',
+              confidence: 0.92,
+              evidence: ['json-parse-ok', 'whole-input'],
+              offset: 0,
+              length: len,
+              completeness: 'complete',
+              decoder_available: true,
+            }),
+          );
+        } catch {
+          findings.push(
+            createFinding({
+              type: 'structured',
+              subtype: 'json',
+              confidence: 0.45,
+              evidence: ['json-like-brackets', 'json-parse-failed'],
+              offset: 0,
+              length: len,
+              completeness: 'malformed',
+              decoder_available: false,
+              alerts: [createAlert('warning', 'MALFORMED_JSON', 'JSON-like structure failed to parse')],
+            }),
+          );
+        }
+      }
     }
   }
 
   if (!findings.some((f) => f.subtype === 'json' && f.completeness === 'complete')) {
     for (let i = 0; i < text.length && findings.length < max; i++) {
-      if (budget && budget.units >= budget.max) break;
-      if (budget) budget.units += 1;
+      if (budgetExhausted(budget)) break;
+      if (!chargeBudget(budget, 1)) break;
       if (text[i] !== '{' && text[i] !== '[') continue;
       const extracted = extractJsonAt(text, i);
       if (!extracted) continue;
@@ -458,7 +483,7 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
   if (!text || text.length < 4) return findings;
   const max = opts.maxFindings ?? 16;
   const budget = opts.budget;
-  const cleaned = text.replace(/\s+/g, '');
+  const cleaned = text.length > 256 * 1024 ? text.slice(0, 256 * 1024).replace(/\s+/g, '') : text.replace(/\s+/g, '');
   const len = byteLength != null ? byteLength : text.length;
 
   if (/^[0-9a-fA-F]+$/.test(cleaned) && cleaned.length % 2 === 0 && cleaned.length >= 8) {
@@ -530,8 +555,8 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
   const hexRe = /\b[0-9a-fA-F]{16,}\b/g;
   let m;
   while ((m = hexRe.exec(text)) && findings.length < max) {
-    if (budget && budget.units >= budget.max) break;
-    if (budget) budget.units += 1;
+    if (budgetExhausted(budget)) break;
+    if (!chargeBudget(budget, 1)) break;
     if (m[0].length % 2 !== 0) continue;
     if (findings.some((f) => f.subtype === 'hex' && f.evidence.includes('whole-input'))) break;
     const range = charRangeToUtf8Bytes(text, m.index, m.index + m[0].length);
@@ -553,10 +578,9 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
   }
 
   if (!findings.some((f) => f.subtype === 'base64' && f.evidence.includes('whole-input'))) {
-    for (const hit of scanBase64Tokens(text)) {
+    for (const hit of scanBase64Tokens(text, { budget, maxCandidates: max })) {
       if (findings.length >= max) break;
-      if (budget && budget.units >= budget.max) break;
-      if (budget) budget.units += 1;
+      if (budgetExhausted(budget)) break;
       const range = charRangeToUtf8Bytes(text, hit.start, hit.end);
       const conf =
         hit.token.length >= 16 ? 0.55 : hit.token.length >= 8 ? 0.4 : 0.35;
