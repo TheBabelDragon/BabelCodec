@@ -1,13 +1,15 @@
 # BabelCodec
 
-**Offline-first encoding, decoding, Unicode text lab (Rust WASM core), Morse blocks, Boolean logic, inspectable SHA-256 computer, and image generation workstation** for the [TheBabelDragon](https://github.com/TheBabelDragon) ecosystem.
+**Offline-first encoding, Unicode, universal detection, artifact pipeline, SHA-256 computer, and image workstation** for the [TheBabelDragon](https://github.com/TheBabelDragon) ecosystem.
 
 **Live:** https://thebabeldragon.github.io/BabelCodec/
 
-**Version:** 0.11.0
+**Version:** 0.14.0
 
 ## Features
 
+- **Universal detection** — automatic multi-format recognition of text, structured data, encodings, and binary signatures with resource-bounded analysis
+- **Artifact pipeline & output ledger** — identity, revisions, provenance, verification, and export without mutating parent artifacts
 - **Converters** — Binary, Hex, Base64, Decimal, Octal, ASCII (strict), UTF-8, Morse
 - **Hex Inspector** — virtualized hex grid, selection, search, jump-to-offset, export
 - **Structure Analyzer** — signed/unsigned integers, IEEE-754 floats, endianness, BigInt 64-bit
@@ -24,9 +26,85 @@
 - **MCP server** — separately deployable Model Context Protocol adapter (`services/mcp-server`) exposing Unicode/text tools via official Streamable HTTP; see [docs/integrations/MCP_SERVER.md](docs/integrations/MCP_SERVER.md)
 - **Signal Processor handoff** — Export PNG + versioned media-job manifest for SSTV encode in [signal-processor](https://github.com/TheBabelDragon/signal-processor)
 - **Zero runtime dependencies** — browser-native APIs + static WASM assets (no remote runtime)
-- **Public JS API** — `babelcodec`, `babelcodec/logic`, `babelcodec/sha256`, `babelcodec/computer`, `babelcodec/text`, `babelcodec/morse`, `babelcodec/scripts`, `babelcodec/media/generation`
+- **Public JS API** — `babelcodec`, `babelcodec/logic`, `babelcodec/sha256`, `babelcodec/computer`, `babelcodec/text`, `babelcodec/morse`, `babelcodec/scripts`, `babelcodec/media/detection`, `babelcodec/media/artifacts`, `babelcodec/media/generation`
 
-## Unicode Core (0.10.0)
+## Universal Detection
+
+Automatic multi-format input recognition without requiring the user to choose an input type first.
+
+```js
+import { detectInput } from 'babelcodec/media/detection';
+
+const result = await detectInput(payload, {
+  typeHint: 'image/png', // optional
+  decodeNested: true,    // inspect nested Base64 when budget allows
+  limits: {
+    maxBytes: 8 * 1024 * 1024,
+    maxWorkUnits: 50_000,
+    maxFindings: 64,
+    maxScanDepth: 3,
+    maxNestedDecodeBytes: 2 * 1024 * 1024,
+  },
+});
+
+// result.findings — type, subtype, confidence, evidence, offsets, completeness
+// result.alerts — machine-readable codes (WORK_LIMIT, SIZE_LIMIT, …)
+// result.analysisComplete — false when a resource limit stopped the scan
+// result.truncated — acquisition was bounded by maxBytes
+```
+
+Detection **classifies**; it does not execute, transform, or destroy the caller’s original input. Incomplete analysis still leaves the acquired bytes available for safe passthrough.
+
+Package export: `babelcodec/media/detection`  
+Docs: [docs/UNIVERSAL_DETECTION.md](docs/UNIVERSAL_DETECTION.md) · [docs/SAFE_PASSTHROUGH.md](docs/SAFE_PASSTHROUGH.md)  
+Schema: [schemas/media/detection-result.v1.schema.json](schemas/media/detection-result.v1.schema.json)
+
+### Acquisition metadata
+
+When a string input is truncated at `maxBytes`, BabelCodec does **not** scan the remainder solely to compute an exact UTF-8 length:
+
+| Field | Meaning |
+|-------|---------|
+| `originalByteLength` | Exact length when known; `null` when truncated without a remainder scan |
+| `originalByteLengthExact` | Whether `originalByteLength` is authoritative |
+| `originalByteLengthAtLeast` | Truthful lower bound when exact length is unknown |
+| `acquiredByteLength` | Bytes actually held after acquisition |
+
+## Artifact Pipeline and Output Ledger
+
+Stable artifact identity, revisions, provenance, and exportable history.
+
+```js
+import {
+  ingestInput,
+  createArtifactLedger,
+  getArtifactHistory,
+  getArtifactOutput,
+  verifyArtifactOutput,
+  restoreWorkingRevision,
+} from 'babelcodec/media/artifacts';
+
+const ledger = createArtifactLedger({ disableIdb: true }); // in-memory
+const { artifact, detection, ledgerRecord } = await ingestInput(input, {
+  ledger,
+  typeHint: undefined,
+});
+
+const history = getArtifactHistory(artifact.id);
+const exported = getArtifactOutput(artifact.id, artifact.revision, 'bytes');
+const check = verifyArtifactOutput(artifact.id, artifact.revision);
+```
+
+- Parent artifacts are not mutated when derived outputs are committed.
+- Same-revision commits are idempotent only when **content identity is verified** (bytes present and matching).
+- Conflicting content at the same revision is rejected (`REVISION_CONTENT_COLLISION`).
+- Unverifiable identity (missing bytes) is rejected (`REVISION_IDENTITY_UNVERIFIED`).
+- Default storage is in-memory; IndexedDB persistence is optional and best-effort. A ledger record is **not** proof of durable storage if persistence fails or payloads are evicted.
+
+Package export: `babelcodec/media/artifacts`  
+Docs: [docs/ARTIFACT_HISTORY.md](docs/ARTIFACT_HISTORY.md)
+
+## Unicode Core
 
 Rust owns Unicode semantics (graphemes UAX #29, NFC/NFD/NFKC/NFKD, XID, Script).  
 JavaScript owns presentation and I/O. There is no competing JS Unicode implementation.
@@ -85,6 +163,13 @@ import { sha256Hex, createSha256Machine } from 'babelcodec';
 import { initializeUnicodeCore, toCanonical } from 'babelcodec/text';
 import { encodeMorseDetailed, textToMorseBlock } from 'babelcodec/morse';
 import { hebrewAdapter } from 'babelcodec/scripts';
+import { detectInput } from 'babelcodec/media/detection';
+import {
+  ingestInput,
+  createArtifactLedger,
+  getArtifactHistory,
+  getArtifactOutput,
+} from 'babelcodec/media/artifacts';
 import {
   ensureGenerationDefaults,
   submitGeneration,
@@ -115,18 +200,22 @@ Docs: [docs/integrations/SIGNAL_PROCESSOR.md](docs/integrations/SIGNAL_PROCESSOR
 ## Development
 
 ```bash
+npm ci --include=dev
 npm test
-npm run test:text
 npm run test:media
 npm run test:mcp       # MCP server unit + official client interop
 npm run test:rust      # cargo test -p unicode-core
 npm run build:wasm
 npm run build
-npm run validate
+npm run validate       # npm test && npm run build
 ```
 
 ## Documentation
 
+- [Universal Detection](docs/UNIVERSAL_DETECTION.md)
+- [Artifact History](docs/ARTIFACT_HISTORY.md)
+- [Safe Passthrough](docs/SAFE_PASSTHROUGH.md)
+- [Detection result schema](schemas/media/detection-result.v1.schema.json)
 - [Unicode Foundation](docs/UNICODE_FOUNDATION.md)
 - [Canonical Representation](docs/CANONICAL_REPRESENTATION.md)
 - [Morse Blocks](docs/MORSE_BLOCKS.md)

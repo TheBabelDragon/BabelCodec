@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://thebabeldragon.github.io/BabelCodec/schemas/media/detection-result.v1.schema.json",
+  "title": "BabelCodec Detection Result v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "byteLength",
+    "findings",
+    "alerts",
+    "originalPreserved"
+  ],
+  "properties": {
+    "schema": { "const": "babelcodec.detection.v1" },
+    "originalByteLength": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Exact original UTF-8 byte length when known; null when truncated acquisition avoided an unbounded remainder scan"
+    },
+    "originalByteLengthExact": { "type": "boolean" },
+    "originalByteLengthAtLeast": { "type": "integer", "minimum": 0 },
+    "acquiredByteLength": { "type": "integer", "minimum": 0 },
+    "scannedByteLength": { "type": "integer", "minimum": 0 },
+    "byteLength": { "type": "integer", "minimum": 0 },
+    "truncated": { "type": "boolean" },
+    "analysisComplete": { "type": "boolean" },
+    "sourceKind": { "type": ["string", "null"] },
+    "filename": { "type": ["string", "null"] },
+    "declaredMime": { "type": ["string", "null"] },
+    "typeHint": { "type": ["string", "null"] },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "alerts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/alert" }
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "maxBytes": { "type": "integer", "minimum": 0 },
+        "maxFindings": { "type": "integer", "minimum": 0 },
+        "maxScanDepth": { "type": "integer", "minimum": 0 },
+        "maxWorkUnits": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "workUnitsUsed": { "type": "integer", "minimum": 0 },
+    "originalPreserved": {
+      "type": "boolean",
+      "description": "Detection did not mutate caller input. Does not imply ledger storage."
+    },
+    "inputUnmodified": { "type": "boolean" },
+    "originalAvailableToCaller": { "type": "boolean" },
+    "originalRetrievableVia": {
+      "type": ["string", "null"],
+      "description": "null for standalone detectInput; set only after a real ledger commit"
+    },
+    "ledgerCommitted": { "type": "boolean" },
+    "storageStatus": {
+      "type": ["string", "null"],
+      "description": "memory | persisted | quota_exceeded | unavailable | null when not committed"
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "required": [
+        "finding_id",
+        "type",
+        "confidence",
+        "offset",
+        "length",
+        "completeness"
+      ],
+      "properties": {
+        "finding_id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "subtype": { "type": ["string", "null"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "offset": { "type": "integer", "minimum": 0 },
+        "length": { "type": "integer", "minimum": 0 },
+        "source_representation": { "type": "string" },
+        "completeness": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "partial",
+            "truncated",
+            "malformed",
+            "ambiguous",
+            "unknown"
+          ]
+        },
+        "parent_finding_id": { "type": ["string", "null"] },
+        "relationships": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/relationship" }
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "supported": { "type": "boolean" },
+        "decoder_available": { "type": "boolean" },
+        "alerts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/alert" }
+        },
+        "source_token": { "type": "string" },
+        "char_start": { "type": "integer", "minimum": 0 },
+        "char_end": { "type": "integer", "minimum": 0 },
+        "parent_offset": { "type": "number", "minimum": 0 },
+        "parent_length": { "type": "number", "minimum": 0 },
+        "parent_char_start": { "type": "integer", "minimum": 0 },
+        "parent_char_end": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "relationship": {
+      "type": "object",
+      "required": ["kind", "target"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["decoded-from"]
+        },
+        "target": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "alert": {
+      "type": "object",
+      "required": ["level", "code", "message"],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["info", "warning", "security", "unsupported"]
+        },
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string" },
+        "detail": {}
+      },
+      "additionalProperties": true
+    }
+  }
+}

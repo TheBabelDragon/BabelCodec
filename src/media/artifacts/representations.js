@@ -1,6 +1,9 @@
 /**
  * Typed representations for an artifact.
  * Missing representations are explicit (null), never implicit.
+ *
+ * Ownership: every public byte buffer is an independent copy.
+ * Typed-array views must not share the caller's ArrayBuffer.
  */
 
 /**
@@ -24,14 +27,28 @@ export function createRepresentations(input = {}) {
 
 /**
  * Defensive copy of byte buffer.
- * @param {Uint8Array|ArrayBuffer|null|undefined} bytes
+ * Always allocates a new ArrayBuffer; never returns a view over the source.
+ *
+ * @param {Uint8Array|ArrayBuffer|ArrayBufferView|null|undefined} bytes
  * @returns {Uint8Array|null}
  */
 export function copyBytes(bytes) {
   if (bytes == null) return null;
-  if (bytes instanceof Uint8Array) return new Uint8Array(bytes);
-  if (bytes instanceof ArrayBuffer) return new Uint8Array(bytes);
-  if (ArrayBuffer.isView(bytes)) return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes instanceof Uint8Array) {
+    // new Uint8Array(typedArray) copies into a fresh buffer
+    return new Uint8Array(bytes);
+  }
+  if (bytes instanceof ArrayBuffer) {
+    return new Uint8Array(bytes.slice(0));
+  }
+  if (ArrayBuffer.isView(bytes)) {
+    // Critical: do NOT use (buffer, byteOffset, byteLength) — that shares storage.
+    // Copy the visible range into a new Uint8Array.
+    const view = /** @type {ArrayBufferView} */ (bytes);
+    const out = new Uint8Array(view.byteLength);
+    out.set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+    return out;
+  }
   return null;
 }
 

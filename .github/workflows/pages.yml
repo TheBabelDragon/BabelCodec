@@ -30,6 +30,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Install root Node dependencies
+        run: npm ci --include=dev
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
