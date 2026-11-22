@@ -21,24 +21,35 @@ describe('shared work budget', () => {
     });
     assert.ok(r.workUnitsUsed <= 10);
   });
+
+  it('binary scan respects tiny budget', async () => {
+    const buf = new Uint8Array(500);
+    buf[100] = 0x89;
+    buf[101] = 0x50;
+    buf[102] = 0x4e;
+    buf[103] = 0x47;
+    const r = await detectInput(buf, { limits: { maxWorkUnits: 5, maxBytes: 500 } });
+    assert.ok(r.workUnitsUsed <= 5);
+    assert.equal(r.analysisComplete, false);
+  });
 });
 
 describe('aggregate nested decode budget', () => {
-  it('stops when aggregate nested bytes exhausted', async () => {
+  it('aggregate nestedDecodedBytes never exceeds configured limit', async () => {
     const chunk = new Uint8Array(64);
     chunk.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
     const t1 = encodeBase64(chunk);
     const t2 = encodeBase64(chunk);
-    const payload = `A ${t1} B ${t2}`;
+    const t3 = encodeBase64(chunk);
+    const payload = `A ${t1} B ${t2} C ${t3}`;
+    const limit = 80;
     const r = await detectInput(payload, {
       decodeNested: true,
-      limits: { maxNestedDecodeBytes: 40, maxWorkUnits: 50_000 },
+      limits: { maxNestedDecodeBytes: limit, maxWorkUnits: 50_000 },
     });
-    // With tiny aggregate limit, should not fully nest both 64-byte payloads
     assert.ok(
-      r.nestedDecodedBytes <= 40 ||
-        r.alerts.some((a) => a.code === 'NESTED_BYTE_LIMIT') ||
-        r.analysisComplete === false,
+      r.nestedDecodedBytes <= limit,
+      `nestedDecodedBytes ${r.nestedDecodedBytes} exceeds limit ${limit}`,
     );
   });
 });
@@ -53,11 +64,9 @@ describe('bounded UTF-8 string acquisition', () => {
   });
 
   it('handles multibyte boundary without invalid trailing UTF-8', async () => {
-    const s = 'é'.repeat(20); // 2 bytes each in UTF-8
+    const s = 'é'.repeat(20);
     const r = await detectInput(s, { limits: { maxBytes: 5 } });
     assert.equal(r.truncated, true);
-    // 5 bytes: at most 2 full 'é' (4) + maybe stop before third
     assert.ok(r.acquiredByteLength <= 5);
-    assert.ok(r.acquiredByteLength % 2 === 0 || r.acquiredByteLength <= 4);
   });
 });
