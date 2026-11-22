@@ -127,10 +127,6 @@ export function createArtifactLedger(opts = {}) {
     return a ? snapshotArtifact(a) : null;
   }
 
-  /**
-   * Resolve a content digest for collision checks.
-   * Prefer hashing available bytes; verify supplied hash against bytes when both exist.
-   */
   function resolveContentDigest(bytes, suppliedHash) {
     if (bytes) {
       let computed;
@@ -177,24 +173,34 @@ export function createArtifactLedger(opts = {}) {
         }
       }
 
-      const contentIdentical =
-        existingDigest &&
-        digest &&
-        digestsEqual(existingDigest, digest) &&
-        (existingBytes && bytes
-          ? existingBytes.byteLength === bytes.byteLength &&
-            existingBytes.every((b, i) => b === bytes[i])
-          : Boolean(existingDigest && digest));
-
-      // Missing digests are never treated as equality
-      if (contentIdentical) {
-        return { ...existing, duplicate: true };
+      // Verified identity requires bytes on both sides.
+      // Supplied digests without bytes are unverified and never establish identity.
+      const bothHaveBytes = Boolean(existingBytes && bytes);
+      if (bothHaveBytes) {
+        let same =
+          existingBytes.byteLength === bytes.byteLength &&
+          existingBytes.every((b, i) => b === bytes[i]);
+        if (same && existingDigest && digest && !digestsEqual(existingDigest, digest)) {
+          same = false;
+        }
+        if (same) {
+          return { ...existing, duplicate: true };
+        }
+        const err = new Error(
+          `Revision content collision: ${snap.id}@${snap.revision} already exists with different content`,
+        );
+        err.code = 'REVISION_CONTENT_COLLISION';
+        err.artifactId = snap.id;
+        err.revision = snap.revision;
+        err.existingSha256 = existingDigest;
+        err.incomingSha256 = digest;
+        throw err;
       }
 
       const err = new Error(
-        `Revision content collision: ${snap.id}@${snap.revision} already exists with different content`,
+        `Revision identity unverified: ${snap.id}@${snap.revision} exists but content cannot be verified (missing bytes)`,
       );
-      err.code = 'REVISION_CONTENT_COLLISION';
+      err.code = 'REVISION_IDENTITY_UNVERIFIED';
       err.artifactId = snap.id;
       err.revision = snap.revision;
       err.existingSha256 = existingDigest;
