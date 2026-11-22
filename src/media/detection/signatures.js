@@ -13,9 +13,30 @@ function sliceEq(bytes, offset, sig) {
   return true;
 }
 
-/** Minimum bytes beyond magic before we call an image "structurally plausible". */
+function budgetMax(budget) {
+  if (!budget) return Infinity;
+  return budget.maxUnits != null ? budget.maxUnits : budget.max != null ? budget.max : Infinity;
+}
+
+function budgetExhausted(budget) {
+  if (!budget) return false;
+  if (budget.stopped) return true;
+  return budget.units >= budgetMax(budget);
+}
+
+function chargeBudget(budget, cost = 1) {
+  if (!budget) return true;
+  budget.units += cost;
+  if (budget.units >= budgetMax(budget)) {
+    budget.stopped = true;
+    if (!budget.stoppedReason) budget.stoppedReason = 'WORK_LIMIT';
+    return false;
+  }
+  return true;
+}
+
 const STRUCTURAL_MIN = {
-  png: 24, // sig + IHDR length/type at least
+  png: 24,
   jpeg: 8,
   gif: 10,
   webp: 16,
@@ -27,11 +48,7 @@ const STRUCTURAL_MIN = {
 
 /**
  * @param {Uint8Array} bytes
- * @param {{
- *   maxFindings?: number,
- *   budget?: { units: number, max: number },
- * }} [opts]
- * @returns {object[]}
+ * @param {{ maxFindings?: number, budget?: object }} [opts]
  */
 export function probeBinarySignatures(bytes, opts = {}) {
   const findings = [];
@@ -115,11 +132,10 @@ export function probeBinarySignatures(bytes, opts = {}) {
     },
   ];
 
-  // Full scan — every byte offset; cost is bounded by budget + max findings
   for (let o = 0; o < bytes.length; o++) {
     if (findings.length >= max) break;
-    if (budget && budget.units >= budget.max) break;
-    if (budget) budget.units += 1;
+    if (budgetExhausted(budget)) break;
+    if (!chargeBudget(budget, 1)) break;
 
     for (const p of probes) {
       if (findings.length >= max) break;
@@ -139,10 +155,9 @@ export function probeBinarySignatures(bytes, opts = {}) {
       let completeness;
       if (remaining < sigLen) completeness = 'truncated';
       else if (remaining < structuralMin) completeness = 'partial';
-      else if (o > 0) completeness = 'partial'; // embedded — not a whole-file claim
+      else if (o > 0) completeness = 'partial';
       else completeness = 'complete';
 
-      // Signature match alone is not a validated decode
       const confidence =
         completeness === 'complete' ? (o === 0 ? 0.9 : 0.75) : completeness === 'partial' ? 0.65 : 0.4;
 
@@ -172,14 +187,12 @@ export function probeBinarySignatures(bytes, opts = {}) {
           offset: o,
           length: Math.min(remaining, structuralMin),
           completeness,
-          // decoder_available means BabelCodec has a decoder path — not that this blob is valid
           decoder_available: Boolean(p.decoder) && completeness !== 'truncated',
           supported: true,
           alerts,
         }),
       );
 
-      // Skip past this signature to reduce duplicate adjacent hits
       o += Math.max(0, sigLen - 1);
       break;
     }
