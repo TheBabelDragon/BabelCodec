@@ -39,8 +39,21 @@
       "additionalProperties": true
     },
     "workUnitsUsed": { "type": "integer", "minimum": 0 },
-    "originalPreserved": { "type": "boolean" },
-    "originalRetrievableVia": { "type": ["string", "null"] }
+    "originalPreserved": {
+      "type": "boolean",
+      "description": "Detection did not mutate caller input. Does not imply ledger storage."
+    },
+    "inputUnmodified": { "type": "boolean" },
+    "originalAvailableToCaller": { "type": "boolean" },
+    "originalRetrievableVia": {
+      "type": ["string", "null"],
+      "description": "null for standalone detectInput; set only after a real ledger commit"
+    },
+    "ledgerCommitted": { "type": "boolean" },
+    "storageStatus": {
+      "type": ["string", "null"],
+      "description": "memory | persisted | quota_exceeded | unavailable | null when not committed"
+    }
   },
   "additionalProperties": true,
   "$defs": {
