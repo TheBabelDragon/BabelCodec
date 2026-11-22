@@ -9,14 +9,82 @@ import { resolveLimits } from './limits.js';
 import { createFinding, createAlert } from './finding.js';
 import { probeBinarySignatures } from './signatures.js';
 import { probeTextAndEncoding, probeStructuredText, probeEncodedForms } from './text.js';
+import {
+  createDetectionBudget,
+  charge,
+  remainingUnits,
+  canDecodeNested,
+  markStopped,
+} from './budget.js';
 
 const SCHEMA = 'babelcodec.detection.v1';
 
 /**
- * Normalize input; when maxBytes is set, copy only the permitted prefix.
- * @param {*} input
- * @param {{ maxBytes?: number }} [opts]
+ * Encode UTF-8 incrementally until maxBytes (or end), preserving code-point boundaries.
+ * @param {string} str
+ * @param {number|null} maxBytes
  */
+function encodeUtf8Bounded(str, maxBytes) {
+  if (maxBytes == null) {
+    const bytes = encodeUtf8(str);
+    return { bytes, originalByteLength: bytes.byteLength, truncated: false };
+  }
+  // Two-pass length estimate without full allocation when truncated:
+  // walk code units, accumulate UTF-8 sizes, stop when budget would be exceeded.
+  const out = [];
+  let total = 0;
+  let i = 0;
+  while (i < str.length) {
+    const code = str.charCodeAt(i);
+    let need;
+    let advance = 1;
+    if (code < 0x80) need = 1;
+    else if (code < 0x800) need = 2;
+    else if (code >= 0xd800 && code <= 0xdbff && i + 1 < str.length) {
+      const low = str.charCodeAt(i + 1);
+      if (low >= 0xdc00 && low <= 0xdfff) {
+        need = 4;
+        advance = 2;
+      } else {
+        need = 3; // unpaired surrogate → replacement-style 3-byte path via encoder
+      }
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      need = 3;
+    } else {
+      need = 3;
+    }
+    if (total + need > maxBytes) break;
+    // Encode this code point / pair
+    const slice = str.slice(i, i + advance);
+    const part = encodeUtf8(slice);
+    for (let j = 0; j < part.length; j++) out.push(part[j]);
+    total += part.length;
+    i += advance;
+  }
+  const truncated = i < str.length;
+  // Full original length: if truncated, finish counting without allocating
+  let originalByteLength = total;
+  if (truncated) {
+    let j = i;
+    while (j < str.length) {
+      const code = str.charCodeAt(j);
+      if (code < 0x80) originalByteLength += 1;
+      else if (code < 0x800) originalByteLength += 2;
+      else if (code >= 0xd800 && code <= 0xdbff && j + 1 < str.length) {
+        const low = str.charCodeAt(j + 1);
+        if (low >= 0xdc00 && low <= 0xdfff) {
+          originalByteLength += 4;
+          j += 2;
+          continue;
+        }
+        originalByteLength += 3;
+      } else originalByteLength += 3;
+      j += 1;
+    }
+  }
+  return { bytes: new Uint8Array(out), originalByteLength, truncated };
+}
+
 export async function normalizeInput(input, opts = {}) {
   const maxBytes =
     opts.maxBytes != null && Number.isFinite(opts.maxBytes) && opts.maxBytes >= 0
@@ -28,24 +96,13 @@ export async function normalizeInput(input, opts = {}) {
   }
 
   if (typeof input === 'string') {
-    // Encode once; if over maxBytes, keep only the UTF-8 prefix (may split a multi-byte char)
-    const full = encodeUtf8(input);
-    const originalByteLength = full.byteLength;
-    if (maxBytes != null && full.byteLength > maxBytes) {
-      return {
-        bytes: copyBytes(full.subarray(0, maxBytes)),
-        text: null,
-        sourceKind: 'text',
-        originalByteLength,
-        truncatedAtAcquisition: true,
-      };
-    }
+    const { bytes, originalByteLength, truncated } = encodeUtf8Bounded(input, maxBytes);
     return {
-      bytes: full,
-      text: input,
+      bytes,
+      text: truncated ? null : input,
       sourceKind: 'text',
       originalByteLength,
-      truncatedAtAcquisition: false,
+      truncatedAtAcquisition: truncated,
     };
   }
 
@@ -142,11 +199,25 @@ function candidateScore(f) {
   return len * 10 + (f.confidence || 0) * 5 + hasSpan;
 }
 
+/**
+ * @param {*} input
+ * @param {object} [options]
+ * @param {ReturnType<typeof createDetectionBudget>} [options._budget] internal shared budget
+ */
 export async function detectInput(input, options = {}) {
   const limits = resolveLimits(options.limits);
   const alerts = [];
-  const budget = { units: 0, max: limits.maxWorkUnits };
-  let nestedDecodedBytes = 0;
+  const isRoot = !options._budget;
+  const budget = options._budget || createDetectionBudget(limits);
+  const depth = options._depth ?? 0;
+
+  if (isRoot) {
+    budget.depth = 0;
+    budget.maxDepth = limits.maxScanDepth;
+    budget.maxFindings = limits.maxFindings;
+    budget.maxUnits = limits.maxWorkUnits;
+    budget.maxNestedDecodedBytes = limits.maxNestedDecodeBytes;
+  }
 
   const normalized = await normalizeInput(input, { maxBytes: limits.maxBytes });
   const originalByteLength =
@@ -169,51 +240,58 @@ export async function detectInput(input, options = {}) {
   const findings = [];
   let analysisComplete = true;
 
-  for (const f of probeBinarySignatures(bytes, {
-    maxFindings: limits.maxFindings,
-    budget,
-  })) {
-    findings.push(f);
+  if (!budget.stopped) {
+    for (const f of probeBinarySignatures(bytes, {
+      maxFindings: limits.maxFindings - budget.findingsCount,
+      budget,
+    })) {
+      findings.push(f);
+      budget.findingsCount += 1;
+      if (budget.stopped) break;
+    }
   }
 
-  if (budget.units < budget.max) {
-    for (const f of probeTextAndEncoding(bytes)) {
+  if (!budget.stopped) {
+    for (const f of probeTextAndEncoding(bytes, { budget })) {
       findings.push(f);
-      budget.units += 2;
-      if (budget.units >= budget.max) break;
+      budget.findingsCount += 1;
+      charge(budget, 2);
+      if (budget.stopped) break;
     }
   }
 
   let text = normalized.text;
-  if (text == null && budget.units < budget.max) {
+  if (text == null && !budget.stopped) {
     try {
       text = decodeUtf8(bytes);
-      budget.units += 5;
+      charge(budget, 5);
     } catch {
       text = null;
     }
   }
 
-  if (text != null && budget.units < budget.max) {
+  if (text != null && !budget.stopped) {
     for (const f of probeStructuredText(text, bytes.byteLength, {
-      maxFindings: limits.maxFindings - findings.length,
+      maxFindings: limits.maxFindings - budget.findingsCount,
       budget,
     })) {
       findings.push(f);
-      if (budget.units >= budget.max) break;
+      budget.findingsCount += 1;
+      if (budget.stopped) break;
     }
-    if (budget.units < budget.max) {
+    if (!budget.stopped) {
       for (const f of probeEncodedForms(text, bytes.byteLength, {
-        maxFindings: limits.maxFindings - findings.length,
+        maxFindings: limits.maxFindings - budget.findingsCount,
         budget,
       })) {
         findings.push(f);
-        if (budget.units >= budget.max) break;
+        budget.findingsCount += 1;
+        if (budget.stopped) break;
       }
     }
 
-    const depthLeft = options.maxDepth ?? limits.maxScanDepth;
-    if (options.decodeNested !== false && depthLeft > 0 && budget.units < budget.max) {
+    const depthLeft = (options.maxDepth ?? limits.maxScanDepth) - depth;
+    if (options.decodeNested !== false && depthLeft > 0 && !budget.stopped) {
       const b64Candidates = findings
         .filter(
           (f) =>
@@ -224,9 +302,11 @@ export async function detectInput(input, options = {}) {
         .sort((a, b) => candidateScore(b) - candidateScore(a));
 
       for (const b64Finding of b64Candidates.slice(0, 3)) {
-        if (budget.units >= budget.max) break;
-        const remaining = budget.max - budget.units;
-        if (remaining <= 0) break;
+        if (budget.stopped) break;
+        if (remainingUnits(budget) <= 0) {
+          markStopped(budget, 'WORK_LIMIT');
+          break;
+        }
 
         const token = extractToken(b64Finding, text);
         if (!token) {
@@ -236,10 +316,27 @@ export async function detectInput(input, options = {}) {
           ];
           continue;
         }
+
+        const estimated = Math.floor(token.length * 0.75);
+        if (!canDecodeNested(budget, estimated)) {
+          const code = budget.stoppedReason || 'NESTED_BYTE_LIMIT';
+          alerts.push(
+            createAlert('security', code, `Nested decoding stopped (${code})`),
+          );
+          analysisComplete = false;
+          break;
+        }
+
         try {
-          const estimated = Math.floor(token.length * 0.75);
-          if (estimated > limits.maxNestedDecodeBytes) continue;
-          if (nestedDecodedBytes + estimated > limits.maxNestedDecodeBytes) {
+          if (!charge(budget, 15)) {
+            analysisComplete = false;
+            break;
+          }
+          const decoded = decodeBase64(token);
+          if (decoded.byteLength <= 0) continue;
+          if (decoded.byteLength > limits.maxNestedDecodeBytes) continue;
+          if (budget.nestedDecodedBytes + decoded.byteLength > budget.maxNestedDecodedBytes) {
+            markStopped(budget, 'NESTED_BYTE_LIMIT');
             alerts.push(
               createAlert(
                 'security',
@@ -251,31 +348,26 @@ export async function detectInput(input, options = {}) {
             break;
           }
 
-          const decoded = decodeBase64(token);
-          budget.units += 15;
-          if (decoded.byteLength <= 0 || decoded.byteLength > limits.maxNestedDecodeBytes) continue;
-          nestedDecodedBytes += decoded.byteLength;
-
-          const childMax = Math.max(0, budget.max - budget.units);
-          if (childMax <= 0) {
-            analysisComplete = false;
-            break;
-          }
+          budget.nestedDecodedBytes += decoded.byteLength;
+          budget.candidateCount += 1;
+          budget.depth = depth + 1;
 
           const nested = await detectInput(decoded, {
             typeHint: options.typeHint,
-            maxDepth: depthLeft - 1,
+            maxDepth: options.maxDepth ?? limits.maxScanDepth,
             decodeNested: depthLeft - 1 > 0,
-            limits: {
-              ...limits,
-              maxFindings: Math.min(8, limits.maxFindings),
-              maxWorkUnits: childMax,
-            },
+            limits,
+            _budget: budget,
+            _depth: depth + 1,
           });
-          budget.units += nested.workUnitsUsed || 0;
+
+          if (nested.analysisComplete === false) analysisComplete = false;
 
           for (const nf of nested.findings || []) {
-            if (findings.length >= limits.maxFindings) break;
+            if (budget.findingsCount >= limits.maxFindings) {
+              markStopped(budget, 'FINDING_CAP');
+              break;
+            }
             findings.push({
               ...nf,
               parent_finding_id: b64Finding.finding_id,
@@ -289,6 +381,7 @@ export async function detectInput(input, options = {}) {
               parent_char_start: b64Finding.char_start,
               parent_char_end: b64Finding.char_end,
             });
+            budget.findingsCount += 1;
           }
           if (nested.findings?.some((f) => f.type === 'image')) {
             b64Finding.evidence = [...(b64Finding.evidence || []), 'nested-image-detected'];
@@ -355,11 +448,14 @@ export async function detectInput(input, options = {}) {
     );
   }
 
-  if (budget.units >= budget.max) {
+  if (budget.stopped) {
     analysisComplete = false;
-    alerts.push(
-      createAlert('security', 'WORK_LIMIT', 'Detection work limit reached during scan; results may be partial'),
-    );
+    const code = budget.stoppedReason || 'WORK_LIMIT';
+    if (!alerts.some((a) => a.code === code)) {
+      alerts.push(
+        createAlert('security', code, `Detection stopped early (${code}); results may be partial`),
+      );
+    }
   }
 
   const capped = findings.slice(0, limits.maxFindings);
@@ -389,6 +485,11 @@ export async function detectInput(input, options = {}) {
       maxWorkUnits: limits.maxWorkUnits,
     },
     workUnitsUsed: budget.units,
+    workUnitsLimit: budget.maxUnits,
+    nestedDecodedBytes: budget.nestedDecodedBytes,
+    nestedDecodedBytesLimit: budget.maxNestedDecodedBytes,
+    candidateCount: budget.candidateCount,
+    stoppedReason: budget.stoppedReason,
     inputUnmodified: true,
     originalAvailableToCaller: true,
     originalPreserved: true,
