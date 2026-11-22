@@ -220,15 +220,21 @@ export function probeTextAndEncoding(bytes, opts = {}) {
   let printable = 0;
   let nulls = 0;
   let high = 0;
+  const budget = opts.budget || null;
   const n = Math.min(bytes.length, 4096);
+  let scanned = 0;
   for (let i = 0; i < n; i++) {
+    if (budgetExhausted(budget)) break;
+    if (!chargeBudget(budget, 1)) break;
+    scanned += 1;
     const b = bytes[i];
     if (b === 0) nulls += 1;
     else if (b === 9 || b === 10 || b === 13 || (b >= 32 && b < 127)) printable += 1;
     else if (b >= 128) high += 1;
   }
+  const incompleteScan = scanned < n;
 
-  const ratio = printable / n;
+  const ratio = scanned > 0 ? printable / scanned : 0;
   const isLikelyText = nulls === 0 && ratio > 0.85;
   const isAscii = isLikelyText && high === 0;
 
@@ -238,14 +244,14 @@ export function probeTextAndEncoding(bytes, opts = {}) {
         type: 'text',
         subtype: isAscii ? 'ascii' : 'utf-8',
         confidence: isAscii ? 0.9 : 0.75,
-        evidence: [`printable-ratio:${ratio.toFixed(2)}`, high ? 'high-bytes' : 'ascii-range'],
+        evidence: [`printable-ratio:${ratio.toFixed(2)}`, high ? 'high-bytes' : 'ascii-range', ...(incompleteScan ? ['scan-budget-incomplete'] : [])],
         offset: 0,
         length: bytes.length,
-        completeness: 'complete',
+        completeness: incompleteScan ? 'partial' : 'complete',
         decoder_available: true,
       }),
     );
-  } else if (nulls > 0 && nulls < n * 0.1) {
+  } else if (nulls > 0 && nulls < (scanned || n) * 0.1) {
     findings.push(
       createFinding({
         type: 'text',
@@ -264,7 +270,7 @@ export function probeTextAndEncoding(bytes, opts = {}) {
   return findings;
 }
 
-function extractJsonAt(text, i) {
+function extractJsonAt(text, i, budget = null) {
   const open = text[i];
   if (open !== '{' && open !== '[') return null;
   const close = open === '{' ? '}' : ']';
@@ -272,6 +278,8 @@ function extractJsonAt(text, i) {
   let inStr = false;
   let escape = false;
   for (let j = i; j < text.length; j++) {
+    if (budgetExhausted(budget)) return null;
+    if (!chargeBudget(budget, 1)) return null;
     const c = text[j];
     if (inStr) {
       if (escape) escape = false;
@@ -368,7 +376,7 @@ export function probeStructuredText(text, byteLength, opts = {}) {
       if (budgetExhausted(budget)) break;
       if (!chargeBudget(budget, 1)) break;
       if (text[i] !== '{' && text[i] !== '[') continue;
-      const extracted = extractJsonAt(text, i);
+      const extracted = extractJsonAt(text, i, budget);
       if (!extracted) continue;
       if (extracted.value === trimmed) continue;
       const range = charRangeToUtf8Bytes(text, i, extracted.end);
