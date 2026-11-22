@@ -27,10 +27,14 @@ const SCHEMA = 'babelcodec.detection.v1';
 function encodeUtf8Bounded(str, maxBytes) {
   if (maxBytes == null) {
     const bytes = encodeUtf8(str);
-    return { bytes, originalByteLength: bytes.byteLength, truncated: false };
+    return {
+      bytes,
+      originalByteLength: bytes.byteLength,
+      originalByteLengthExact: true,
+      originalByteLengthAtLeast: bytes.byteLength,
+      truncated: false,
+    };
   }
-  // Two-pass length estimate without full allocation when truncated:
-  // walk code units, accumulate UTF-8 sizes, stop when budget would be exceeded.
   const out = [];
   let total = 0;
   let i = 0;
@@ -46,7 +50,7 @@ function encodeUtf8Bounded(str, maxBytes) {
         need = 4;
         advance = 2;
       } else {
-        need = 3; // unpaired surrogate → replacement-style 3-byte path via encoder
+        need = 3;
       }
     } else if (code >= 0xdc00 && code <= 0xdfff) {
       need = 3;
@@ -54,7 +58,6 @@ function encodeUtf8Bounded(str, maxBytes) {
       need = 3;
     }
     if (total + need > maxBytes) break;
-    // Encode this code point / pair
     const slice = str.slice(i, i + advance);
     const part = encodeUtf8(slice);
     for (let j = 0; j < part.length; j++) out.push(part[j]);
@@ -62,27 +65,14 @@ function encodeUtf8Bounded(str, maxBytes) {
     i += advance;
   }
   const truncated = i < str.length;
-  // Full original length: if truncated, finish counting without allocating
-  let originalByteLength = total;
-  if (truncated) {
-    let j = i;
-    while (j < str.length) {
-      const code = str.charCodeAt(j);
-      if (code < 0x80) originalByteLength += 1;
-      else if (code < 0x800) originalByteLength += 2;
-      else if (code >= 0xd800 && code <= 0xdbff && j + 1 < str.length) {
-        const low = str.charCodeAt(j + 1);
-        if (low >= 0xdc00 && low <= 0xdfff) {
-          originalByteLength += 4;
-          j += 2;
-          continue;
-        }
-        originalByteLength += 3;
-      } else originalByteLength += 3;
-      j += 1;
-    }
-  }
-  return { bytes: new Uint8Array(out), originalByteLength, truncated };
+  // Do not traverse the remainder of the string just to compute exact length.
+  return {
+    bytes: new Uint8Array(out),
+    originalByteLength: truncated ? null : total,
+    originalByteLengthExact: !truncated,
+    originalByteLengthAtLeast: truncated ? total + 1 : total,
+    truncated,
+  };
 }
 
 export async function normalizeInput(input, opts = {}) {
@@ -96,13 +86,15 @@ export async function normalizeInput(input, opts = {}) {
   }
 
   if (typeof input === 'string') {
-    const { bytes, originalByteLength, truncated } = encodeUtf8Bounded(input, maxBytes);
+    const enc = encodeUtf8Bounded(input, maxBytes);
     return {
-      bytes,
-      text: truncated ? null : input,
+      bytes: enc.bytes,
+      text: enc.truncated ? null : input,
       sourceKind: 'text',
-      originalByteLength,
-      truncatedAtAcquisition: truncated,
+      originalByteLength: enc.originalByteLength,
+      originalByteLengthExact: enc.originalByteLengthExact,
+      originalByteLengthAtLeast: enc.originalByteLengthAtLeast,
+      truncatedAtAcquisition: enc.truncated,
     };
   }
 
@@ -122,6 +114,7 @@ export async function normalizeInput(input, opts = {}) {
       filename: input.name,
       declaredMime: input.type || null,
       originalByteLength: size != null ? size : buf.byteLength,
+      originalByteLengthExact: size != null,
       truncatedAtAcquisition,
     };
   }
@@ -141,6 +134,7 @@ export async function normalizeInput(input, opts = {}) {
       sourceKind: 'blob',
       declaredMime: input.type || null,
       originalByteLength: size != null ? size : buf.byteLength,
+      originalByteLengthExact: size != null,
       truncatedAtAcquisition,
     };
   }
@@ -156,6 +150,7 @@ export async function normalizeInput(input, opts = {}) {
       text: null,
       sourceKind: 'bytes',
       originalByteLength,
+      originalByteLengthExact: true,
       truncatedAtAcquisition: take < originalByteLength,
     };
   }
@@ -171,6 +166,7 @@ export async function normalizeInput(input, opts = {}) {
       text: null,
       sourceKind: 'bytes',
       originalByteLength,
+      originalByteLengthExact: true,
       truncatedAtAcquisition: take < originalByteLength,
     };
   }
@@ -199,11 +195,6 @@ function candidateScore(f) {
   return len * 10 + (f.confidence || 0) * 5 + hasSpan;
 }
 
-/**
- * @param {*} input
- * @param {object} [options]
- * @param {ReturnType<typeof createDetectionBudget>} [options._budget] internal shared budget
- */
 export async function detectInput(input, options = {}) {
   const limits = resolveLimits(options.limits);
   const alerts = [];
@@ -220,10 +211,13 @@ export async function detectInput(input, options = {}) {
   }
 
   const normalized = await normalizeInput(input, { maxBytes: limits.maxBytes });
+  const originalByteLengthExact = normalized.originalByteLengthExact !== false;
   const originalByteLength =
     normalized.originalByteLength != null
       ? normalized.originalByteLength
-      : normalized.bytes.byteLength;
+      : originalByteLengthExact
+        ? normalized.bytes.byteLength
+        : null;
   let bytes = normalized.bytes;
   let truncated = Boolean(normalized.truncatedAtAcquisition);
 
@@ -262,11 +256,15 @@ export async function detectInput(input, options = {}) {
 
   let text = normalized.text;
   if (text == null && !budget.stopped) {
-    try {
-      text = decodeUtf8(bytes);
-      charge(budget, 5);
-    } catch {
-      text = null;
+    const decodeCost = Math.max(5, Math.ceil(bytes.byteLength / 64));
+    if (!charge(budget, decodeCost)) {
+      analysisComplete = false;
+    } else {
+      try {
+        text = decodeUtf8(bytes);
+      } catch {
+        text = null;
+      }
     }
   }
 
@@ -320,9 +318,7 @@ export async function detectInput(input, options = {}) {
         const estimated = Math.floor(token.length * 0.75);
         if (!canDecodeNested(budget, estimated)) {
           const code = budget.stoppedReason || 'NESTED_BYTE_LIMIT';
-          alerts.push(
-            createAlert('security', code, `Nested decoding stopped (${code})`),
-          );
+          alerts.push(createAlert('security', code, `Nested decoding stopped (${code})`));
           analysisComplete = false;
           break;
         }
@@ -467,6 +463,11 @@ export async function detectInput(input, options = {}) {
   return {
     schema: SCHEMA,
     originalByteLength,
+    originalByteLengthExact,
+    originalByteLengthAtLeast:
+      normalized.originalByteLengthAtLeast != null
+        ? normalized.originalByteLengthAtLeast
+        : bytes.byteLength,
     acquiredByteLength: bytes.byteLength,
     scannedByteLength: bytes.byteLength,
     byteLength: bytes.byteLength,
