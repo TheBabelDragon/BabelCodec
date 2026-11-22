@@ -491,8 +491,12 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
   if (!text || text.length < 4) return findings;
   const max = opts.maxFindings ?? 16;
   const budget = opts.budget;
-  const cleaned = text.length > 256 * 1024 ? text.slice(0, 256 * 1024).replace(/\s+/g, '') : text.replace(/\s+/g, '');
+  const windowLimit = 256 * 1024;
+  const examinedFullText = text.length <= windowLimit;
+  const windowText = examinedFullText ? text : text.slice(0, windowLimit);
+  const cleaned = windowText.replace(/\s+/g, '');
   const len = byteLength != null ? byteLength : text.length;
+  const wholeEvidence = examinedFullText ? 'whole-input' : 'bounded-prefix';
 
   if (/^[0-9a-fA-F]+$/.test(cleaned) && cleaned.length % 2 === 0 && cleaned.length >= 8) {
     findings.push(
@@ -500,10 +504,10 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
         type: 'encoded',
         subtype: 'hex',
         confidence: cleaned.length >= 32 ? 0.85 : 0.6,
-        evidence: ['hex-charset', 'whole-input', `len:${cleaned.length}`],
+        evidence: ['hex-charset', wholeEvidence, `len:${cleaned.length}`],
         offset: 0,
         length: len,
-        completeness: 'complete',
+        completeness: examinedFullText ? 'complete' : 'partial',
         decoder_available: true,
         source_token: cleaned,
         char_start: 0,
@@ -522,10 +526,10 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
         type: 'encoded',
         subtype: 'base64',
         confidence: conf,
-        evidence: ['base64-charset', 'whole-input', `len:${cleaned.length}`, 'canonical'],
+        evidence: ['base64-charset', wholeEvidence, `len:${cleaned.length}`, 'canonical'],
         offset: 0,
         length: len,
-        completeness: 'complete',
+        completeness: examinedFullText ? 'complete' : 'partial',
         decoder_available: true,
         source_token: cleaned,
         char_start: 0,
@@ -545,7 +549,7 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
         type: 'encoded',
         subtype: 'base64',
         confidence: 0.25,
-        evidence: ['base64-noncanonical-pad', 'whole-input'],
+        evidence: ['base64-noncanonical-pad', wholeEvidence],
         offset: 0,
         length: len,
         completeness: 'malformed',
@@ -585,7 +589,7 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
     );
   }
 
-  if (!findings.some((f) => f.subtype === 'base64' && f.evidence.includes('whole-input'))) {
+  if (!findings.some((f) => f.subtype === 'base64' && (f.evidence.includes('whole-input') || f.evidence.includes('bounded-prefix')))) {
     for (const hit of scanBase64Tokens(text, { budget, maxCandidates: max })) {
       if (findings.length >= max) break;
       if (budgetExhausted(budget)) break;
@@ -617,16 +621,16 @@ export function probeEncodedForms(text, byteLength, opts = {}) {
     }
   }
 
-  if (/%[0-9a-fA-F]{2}/.test(text) && (text.match(/%[0-9a-fA-F]{2}/g) || []).length >= 2) {
+  if (/%[0-9a-fA-F]{2}/.test(windowText) && (windowText.match(/%[0-9a-fA-F]{2}/g) || []).length >= 2) {
     findings.push(
       createFinding({
         type: 'encoded',
         subtype: 'url-encoding',
         confidence: 0.7,
-        evidence: ['percent-encoding'],
+        evidence: ['percent-encoding', wholeEvidence],
         offset: 0,
         length: len,
-        completeness: 'complete',
+        completeness: examinedFullText ? 'complete' : 'partial',
         decoder_available: true,
       }),
     );
