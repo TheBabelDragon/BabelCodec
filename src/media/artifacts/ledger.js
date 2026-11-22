@@ -22,6 +22,11 @@ function nextOpId(name) {
   return `op-${name}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function digestsEqual(a, b) {
+  if (!a || !b) return false;
+  return String(a).toLowerCase() === String(b).toLowerCase();
+}
+
 export function createArtifactLedger(opts = {}) {
   const records = new Map();
   const payloads = new Map();
@@ -37,7 +42,6 @@ export function createArtifactLedger(opts = {}) {
     return `${artifactId}@${revision}`;
   }
 
-  /** Highest known revision for an artifact (ledger records + in-memory artifacts). */
   function highestRevision(artifactId) {
     let max = 0;
     for (const r of records.values()) {
@@ -123,29 +127,79 @@ export function createArtifactLedger(opts = {}) {
     return a ? snapshotArtifact(a) : null;
   }
 
+  /**
+   * Resolve a content digest for collision checks.
+   * Prefer hashing available bytes; verify supplied hash against bytes when both exist.
+   */
+  function resolveContentDigest(bytes, suppliedHash) {
+    if (bytes) {
+      let computed;
+      try {
+        computed = sha256(bytes).hex;
+      } catch {
+        computed = null;
+      }
+      if (computed && suppliedHash && !digestsEqual(computed, suppliedHash)) {
+        const err = new Error(
+          `Hash mismatch: supplied sha256 does not match bytes (supplied=${suppliedHash}, actual=${computed})`,
+        );
+        err.code = 'HASH_MISMATCH';
+        throw err;
+      }
+      return computed || (suppliedHash ? String(suppliedHash) : null);
+    }
+    return suppliedHash ? String(suppliedHash) : null;
+  }
+
   async function commit(artifact, info = {}) {
     const snap = snapshotArtifact(artifact);
     const k = keyOf(snap.id, snap.revision);
-
-    // Uniqueness: refuse to overwrite an existing revision slot
-    if (revisionExists(snap.id, snap.revision) && !info.allowOverwrite) {
-      // If this exact revision was already committed with same content, treat as idempotent return
-      const existing = getRecord(snap.id, snap.revision);
-      if (existing) {
-        return { ...existing, duplicate: true };
-      }
-      throw new Error(`Revision collision: ${snap.id}@${snap.revision} already exists`);
-    }
-
     const bytes = snap.representations.bytes ? copyBytes(snap.representations.bytes) : null;
 
-    let digest = snap.hashes?.sha256 ?? null;
-    if (!digest && bytes) {
-      try {
-        digest = sha256(bytes).hex;
-      } catch {
-        digest = null;
+    let digest;
+    try {
+      digest = resolveContentDigest(bytes, snap.hashes?.sha256 ?? null);
+    } catch (e) {
+      if (e && e.code === 'HASH_MISMATCH') throw e;
+      digest = null;
+    }
+
+    if (revisionExists(snap.id, snap.revision) && !info.allowOverwrite) {
+      const existing = getRecord(snap.id, snap.revision);
+      const existingBytes = getBytes(snap.id, snap.revision);
+      let existingDigest = existing?.sha256 ?? null;
+
+      if (existingBytes) {
+        try {
+          existingDigest = sha256(existingBytes).hex;
+        } catch {
+          /* keep stored */
+        }
       }
+
+      const contentIdentical =
+        existingDigest &&
+        digest &&
+        digestsEqual(existingDigest, digest) &&
+        (existingBytes && bytes
+          ? existingBytes.byteLength === bytes.byteLength &&
+            existingBytes.every((b, i) => b === bytes[i])
+          : Boolean(existingDigest && digest));
+
+      // Missing digests are never treated as equality
+      if (contentIdentical) {
+        return { ...existing, duplicate: true };
+      }
+
+      const err = new Error(
+        `Revision content collision: ${snap.id}@${snap.revision} already exists with different content`,
+      );
+      err.code = 'REVISION_CONTENT_COLLISION';
+      err.artifactId = snap.id;
+      err.revision = snap.revision;
+      err.existingSha256 = existingDigest;
+      err.incomingSha256 = digest;
+      throw err;
     }
 
     const record = {
@@ -359,10 +413,6 @@ export function createArtifactLedger(opts = {}) {
     };
   }
 
-  /**
-   * Restore historical revision as a new working revision.
-   * Allocates highestExistingRevision + 1 (never parent.revision + 1 alone).
-   */
   async function restoreWorking(artifactId, revision) {
     let bytes = getBytes(artifactId, revision);
     if (!bytes) bytes = await ensureBytes(artifactId, revision);
