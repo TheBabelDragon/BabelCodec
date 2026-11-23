@@ -16,10 +16,11 @@
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="BabelCodec — Universal Encoding & Binary Workbench" />
   <meta name="twitter:description" content="Offline-first encoding, decoding, binary inspection, Morse, SHA-256, and Unicode text lab." />
-  <link rel="stylesheet" href="src/ui/styles.css?v=0.12.1" />
-  <link rel="stylesheet" href="src/ui/lab-layout.css?v=0.12.1" />
-  <link rel="stylesheet" href="src/ui/studio.css?v=0.12.1" />
-  <link rel="stylesheet" href="src/ui/inspector.css?v=0.12.2" />
+  <link rel="stylesheet" href="src/ui/styles.css?v=0.15.0" />
+  <link rel="stylesheet" href="src/ui/pipeline.css?v=0.15.0" />
+  <link rel="stylesheet" href="src/ui/lab-layout.css?v=0.15.0" />
+  <link rel="stylesheet" href="src/ui/studio.css?v=0.15.0" />
+  <link rel="stylesheet" href="src/ui/inspector.css?v=0.15.0" />
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -55,71 +56,152 @@
   <header class="app-header">
     <div class="brand">
       <span class="brand-name">BabelCodec</span>
-      <span class="brand-tag">encoding · unicode · morse · SHA-256 · computer · CPU · images</span>
+      <span class="brand-tag">encoding · detection · artifacts · images · SHA-256</span>
     </div>
     <nav class="tab-nav" role="tablist" aria-label="Workbench views">
       <button type="button" class="tab-btn active" data-tab="converter" role="tab" aria-selected="true">Converter</button>
-      <button type="button" class="tab-btn" data-tab="inspector" role="tab" aria-selected="false">Hex Inspector</button>
-      <button type="button" class="tab-btn" data-tab="structure" role="tab" aria-selected="false">Structure & Layout</button>
-      <button type="button" class="tab-btn" data-tab="logic" role="tab" aria-selected="false">Logic Lab</button>
-      <button type="button" class="tab-btn" data-tab="sha256" role="tab" aria-selected="false">SHA-256 Lab</button>
-      <button type="button" class="tab-btn" data-tab="computer" role="tab" aria-selected="false">Computer Lab</button>
-      <button type="button" class="tab-btn" data-tab="cpu" role="tab" aria-selected="false">CPU Lab</button>
-      <button type="button" class="tab-btn" data-tab="text" role="tab" aria-selected="false">Text Lab</button>
+      <button type="button" class="tab-btn" data-tab="inspector" role="tab" aria-selected="false">Inspector</button>
+      <button type="button" class="tab-btn" data-tab="structure" role="tab" aria-selected="false">Structure</button>
+      <button type="button" class="tab-btn" data-tab="logic" role="tab" aria-selected="false">Logic</button>
+      <div class="nav-group" role="group" aria-label="Computing labs">
+        <button type="button" class="tab-btn nav-group-toggle" data-group="computing" aria-expanded="false" aria-haspopup="true">Computing ▾</button>
+        <div class="nav-group-menu" id="nav-computing" hidden>
+          <button type="button" class="tab-btn nested" data-tab="sha256" role="tab" aria-selected="false">SHA-256 Lab</button>
+          <button type="button" class="tab-btn nested" data-tab="computer" role="tab" aria-selected="false">Computer Lab</button>
+          <button type="button" class="tab-btn nested" data-tab="cpu" role="tab" aria-selected="false">CPU Lab</button>
+        </div>
+      </div>
+      <button type="button" class="tab-btn" data-tab="text" role="tab" aria-selected="false">Text</button>
       <button type="button" class="tab-btn" data-tab="media" role="tab" aria-selected="false">Image Studio</button>
     </nav>
     <div class="header-actions">
       <span id="file-meta" class="diag-meta"></span>
-      <button type="button" class="btn btn-ghost" id="btn-load" title="Load local file">Load file</button>
-      <input type="file" id="file-input" />
+      <button type="button" class="btn btn-ghost" id="btn-load" title="Load local file (global)">Load file</button>
+      <input type="file" id="file-input" accept="*/*" hidden />
     </div>
   </header>
 
   <main class="app-main">
     <div id="view-converter" class="view-panel">
-      <div class="toolbar">
-        <label>
-          From
-          <select id="from-format" aria-label="Source format"></select>
-        </label>
-        <button type="button" class="btn swap-btn" id="btn-swap" title="Swap input and output">⇄</button>
-        <label>
-          To
-          <select id="to-format" aria-label="Destination format"></select>
-        </label>
-        <label>
-          Text encoding
-          <select id="text-encoding" aria-label="Text encoding for text paths">
-            <option value="utf8">UTF-8</option>
-            <option value="ascii">ASCII (strict)</option>
-          </select>
-        </label>
-        <label>
-          <input type="checkbox" id="live-convert" checked />
-          Live
-        </label>
-        <button type="button" class="btn btn-primary" id="btn-convert">Convert</button>
-        <button type="button" class="btn" id="btn-clear">Clear</button>
-        <button type="button" class="btn" id="btn-copy">Copy output</button>
-        <button type="button" class="btn" id="btn-download">Download</button>
-      </div>
+      <div class="converter-stages" aria-label="Directional conversion pipeline">
 
-      <div class="converter-grid">
-        <section class="panel" aria-label="Input">
+        <!-- INPUT STAGE -->
+        <section class="stage stage-input panel" aria-labelledby="stage-input-title">
           <div class="panel-header">
-            <span class="panel-title">Input</span>
+            <span class="panel-title" id="stage-input-title">1 · Input</span>
+            <span class="stage-hint">Text, file, image, or clipboard</span>
           </div>
-          <div class="panel-body">
-            <textarea id="input-area" class="io-area" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Enter text, hex, binary, Base64, or load a file…" aria-label="Conversion input"></textarea>
+          <div class="panel-body stage-body">
+            <div class="input-port" id="input-port">
+              <div class="dropzone" id="dropzone" tabindex="0" role="button"
+                   aria-label="Drop files here or press Enter to choose a file. Supports images and binary.">
+                <div class="dropzone-inner">
+                  <span class="dropzone-icon" aria-hidden="true">⬆</span>
+                  <span class="dropzone-label">Drop image or file, or click to choose</span>
+                  <span class="dropzone-formats">PNG · JPEG · WebP · GIF · BMP · HEIF · binary · text</span>
+                </div>
+                <input type="file" id="converter-file-input" class="converter-file-input"
+                       accept="image/*,.heic,.heif,image/heic,image/heif,*/*"
+                       aria-label="Choose file for Converter" />
+              </div>
+              <div class="input-actions">
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-paste-text" title="Paste text from clipboard">Paste text</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-paste-image" title="Paste image from clipboard">Paste image</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-clear-input" title="Clear input">Clear</button>
+              </div>
+              <div class="input-meta" id="input-meta" hidden>
+                <div class="input-meta-row">
+                  <span id="input-filename" class="meta-filename"></span>
+                  <span id="input-size" class="meta-size"></span>
+                  <span id="input-mime" class="meta-mime"></span>
+                  <span id="input-detected" class="meta-detected"></span>
+                </div>
+                <div class="input-preview-row">
+                  <img id="input-thumb" class="input-thumb" alt="Image preview" hidden />
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-remove-file" hidden>Remove file</button>
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-open-studio" hidden>Open in Image Studio</button>
+                </div>
+              </div>
+              <textarea id="input-area" class="io-area" spellcheck="false" autocomplete="off" autocapitalize="off"
+                        placeholder="Enter text, hex, binary, Base64… or drop / choose a file above"
+                        aria-label="Conversion input text"></textarea>
+            </div>
           </div>
         </section>
 
-        <section class="panel" aria-label="Output">
+        <!-- DETECTION STAGE -->
+        <section class="stage stage-detect panel" aria-labelledby="stage-detect-title">
           <div class="panel-header">
-            <span class="panel-title">Output</span>
+            <span class="panel-title" id="stage-detect-title">2 · Detection</span>
+            <span class="stage-hint" id="detect-status">Automatic on input change</span>
           </div>
-          <div class="panel-body">
-            <textarea id="output-area" class="io-area" spellcheck="false" autocomplete="off" readonly placeholder="Converted output appears here" aria-label="Conversion output"></textarea>
+          <div class="panel-body stage-body">
+            <div id="detection-panel" class="detection-panel" role="status" aria-live="polite">
+              <p class="empty-state">No input yet. Detection runs automatically.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- TRANSFORM STAGE -->
+        <section class="stage stage-transform panel" aria-labelledby="stage-transform-title">
+          <div class="panel-header">
+            <span class="panel-title" id="stage-transform-title">3 · Transform</span>
+            <span class="stage-hint">Source → destination</span>
+          </div>
+          <div class="panel-body stage-body">
+            <div class="toolbar transform-toolbar">
+              <label>
+                From
+                <select id="from-format" aria-label="Source format"></select>
+              </label>
+              <button type="button" class="btn swap-btn" id="btn-swap" title="Swap input and output">⇄</button>
+              <label>
+                To
+                <select id="to-format" aria-label="Destination format"></select>
+              </label>
+              <label>
+                Text encoding
+                <select id="text-encoding" aria-label="Text encoding for text paths">
+                  <option value="utf8">UTF-8</option>
+                  <option value="ascii">ASCII (strict)</option>
+                </select>
+              </label>
+              <label class="live-label">
+                <input type="checkbox" id="live-convert" checked />
+                Live
+              </label>
+              <button type="button" class="btn btn-primary" id="btn-convert">Convert</button>
+            </div>
+            <div class="contextual-ops" id="contextual-ops" hidden>
+              <span class="ops-label">Image actions:</span>
+              <button type="button" class="btn btn-sm" data-op="hex">→ Hex</button>
+              <button type="button" class="btn btn-sm" data-op="base64">→ Base64</button>
+              <button type="button" class="btn btn-sm" data-op="binary">→ Binary</button>
+              <button type="button" class="btn btn-sm" data-op="inspect">Inspect bytes</button>
+              <button type="button" class="btn btn-sm" data-op="studio">Image Studio</button>
+              <button type="button" class="btn btn-sm" data-op="export-orig">Export original</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- OUTPUT STAGE -->
+        <section class="stage stage-output panel" aria-labelledby="stage-output-title">
+          <div class="panel-header">
+            <span class="panel-title" id="stage-output-title">4 · Output</span>
+            <div class="output-actions">
+              <button type="button" class="btn btn-sm" id="btn-copy">Copy</button>
+              <button type="button" class="btn btn-sm" id="btn-download">Download</button>
+              <button type="button" class="btn btn-sm" id="btn-send-inspector">→ Inspector</button>
+              <button type="button" class="btn btn-sm" id="btn-clear">Clear all</button>
+            </div>
+          </div>
+          <div class="panel-body stage-body">
+            <textarea id="output-area" class="io-area" spellcheck="false" autocomplete="off" readonly
+                      placeholder="Converted output appears here"
+                      aria-label="Conversion output"></textarea>
+            <div class="output-preview" id="output-preview" hidden>
+              <img id="output-thumb" alt="Output image preview" />
+            </div>
           </div>
         </section>
       </div>
@@ -163,7 +245,7 @@
   </main>
 
   <footer class="app-footer">
-    <span>BabelCodec v0.12.1 · offline · client-side only · Unicode Core WASM</span>
+    <span>BabelCodec v0.15.0 · offline · client-side only · Unicode Core WASM</span>
     <span>
       <a href="tools/">Tools</a>
       ·
@@ -172,6 +254,6 @@
     </span>
   </footer>
 
-  <script type="module" src="src/ui/app.js?v=0.12.1"></script>
+  <script type="module" src="src/ui/app.js?v=0.15.0"></script>
 </body>
 </html>
